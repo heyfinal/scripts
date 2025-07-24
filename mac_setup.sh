@@ -30,7 +30,7 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
-                                                        
+                          gen dev installs & pref - by final                      
 EOF
   # Reset color
   printf "${NC}\n"
@@ -113,31 +113,85 @@ main() {
         brew update >> "$LOG_FILE" 2>&1
         ;;
       "Install Ranger")
-        brew install ranger >> "$LOG_FILE" 2>&1
+        if ! brew list ranger &>/dev/null; then
+  info "Installing ranger..."
+  brew install ranger >> "$LOG_FILE" 2>&1
+  status $? "ranger installed"
+else
+  info "ranger already installed — skipping"
+fi
         ;;
       "Install chkrootkit")
-        brew install chkrootkit >> "$LOG_FILE" 2>&1
+        if ! brew list chkrootkit &>/dev/null; then
+  info "Installing chkrootkit..."
+  brew install chkrootkit >> "$LOG_FILE" 2>&1
+  status $? "chkrootkit installed"
+else
+  info "chkrootkit already installed — skipping"
+fi
         ;;
       "Install VLC")
-        brew install --cask vlc >> "$LOG_FILE" 2>&1
+        if ! brew list --cask vlc &>/dev/null; then
+  info "Installing vlc..."
+  brew install --cask vlc >> "$LOG_FILE" 2>&1
+  status $? "vlc installed"
+else
+  info "vlc already installed — skipping"
+fi
         ;;
       "Install qBittorrent")
-        brew install --cask qbittorrent >> "$LOG_FILE" 2>&1
+        if ! brew list --cask qbittorrent &>/dev/null; then
+  info "Installing qbittorrent..."
+  brew install --cask qbittorrent >> "$LOG_FILE" 2>&1
+  status $? "qbittorrent installed"
+else
+  info "qbittorrent already installed — skipping"
+fi
         ;;
       "Install Gitleaks")
-        brew install gitleaks >> "$LOG_FILE" 2>&1
+        if ! brew list gitleaks &>/dev/null; then
+  info "Installing gitleaks..."
+  brew install gitleaks >> "$LOG_FILE" 2>&1
+  status $? "gitleaks installed"
+else
+  info "gitleaks already installed — skipping"
+fi
         ;;
       "Install Trivy")
-        brew install aquasecurity/trivy/trivy >> "$LOG_FILE" 2>&1
+        if ! brew list aquasecurity/trivy/trivy &>/dev/null; then
+  info "Installing aquasecurity/trivy/trivy..."
+  brew install aquasecurity/trivy/trivy >> "$LOG_FILE" 2>&1
+  status $? "aquasecurity/trivy/trivy installed"
+else
+  info "aquasecurity/trivy/trivy already installed — skipping"
+fi
         ;;
       "Install zsh-autosuggestions")
-        brew install zsh-autosuggestions >> "$LOG_FILE" 2>&1
+        if ! brew list zsh-autosuggestions &>/dev/null; then
+  info "Installing zsh-autosuggestions..."
+  brew install zsh-autosuggestions >> "$LOG_FILE" 2>&1
+  status $? "zsh-autosuggestions installed"
+else
+  info "zsh-autosuggestions already installed — skipping"
+fi
         ;;
       "Install zsh-syntax-highlighting")
-        brew install zsh-syntax-highlighting >> "$LOG_FILE" 2>&1
+        if ! brew list zsh-syntax-highlighting &>/dev/null; then
+  info "Installing zsh-syntax-highlighting..."
+  brew install zsh-syntax-highlighting >> "$LOG_FILE" 2>&1
+  status $? "zsh-syntax-highlighting installed"
+else
+  info "zsh-syntax-highlighting already installed — skipping"
+fi
         ;;
       "Install Jackett")
-        brew install --cask jackett >> "$LOG_FILE" 2>&1
+        if ! brew list --cask jackett &>/dev/null; then
+  info "Installing jackett..."
+  brew install --cask jackett >> "$LOG_FILE" 2>&1
+  status $? "jackett installed"
+else
+  info "jackett already installed — skipping"
+fi
         status $? "Jackett installed"
         info "Setting Jackett to launch at login..."
         mkdir -p ~/Library/LaunchAgents
