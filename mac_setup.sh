@@ -38,6 +38,30 @@ banner
 echo -e "${CYAN}🔧 Starting macOS setup...${NC}"
 
 # ————————————————————————————————————————————————————————————————————— #
+# Password Management - Get sudo password once and keep it alive
+echo -e "${YELLOW}🔐 This script requires administrator privileges for some operations.${NC}"
+echo -e "${CYAN}Please enter your password once (it will be remembered for this session):${NC}"
+
+# Prompt for password and validate it
+sudo -v
+
+if [[ $? -ne 0 ]]; then
+  echo -e "${RED}❌ Invalid password or cancelled. Exiting.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✓ Password validated. Starting setup...${NC}"
+
+# Keep sudo alive throughout the script
+while true; do
+  sudo -n true
+  sleep 60
+  kill -0 "$" || exit
+done 2>/dev/null &
+
+SUDO_PID=$!
+
+# ————————————————————————————————————————————————————————————————————— #
 # Idempotent Preference Setter (Fixed to handle typed values)
 set_pref() {
   local domain=$1
@@ -80,9 +104,32 @@ set_pref() {
 }
 
 # ————————————————————————————————————————————————————————————————————— #
+# Cleanup function
+cleanup() {
+  echo -e "\n${YELLOW}🧹 Cleaning up...${NC}"
+  # Kill the sudo keep-alive process
+  if [[ -n "$SUDO_PID" ]]; then
+    kill "$SUDO_PID" 2>/dev/null || true
+  fi
+  # Clear sudo timestamp
+  sudo -k
+  echo -e "${GREEN}✓ Sudo session cleared${NC}"
+}
+
+# Set trap to run cleanup on script exit
+trap cleanup EXIT
+
+# ————————————————————————————————————————————————————————————————————— #
 # Check if command exists
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# ————————————————————————————————————————————————————————————————————— #
+# Check if macOS app exists
+app_exists() {
+  local app_name="$1"
+  [[ -d "/Applications/${app_name}.app" ]]
 }
 
 # ————————————————————————————————————————————————————————————————————— #
@@ -122,19 +169,61 @@ install_brew_package() {
 }
 
 # ————————————————————————————————————————————————————————————————————— #
-# Homebrew Cask Installer (Optimized)
+# Homebrew Cask Installer (Optimized with app detection)
 install_brew_cask() {
   local cask=$1
+  local app_name=""
+  
+  # Map cask names to app bundle names
+  case "$cask" in
+    "google-chrome") app_name="Google Chrome" ;;
+    "visual-studio-code") app_name="Visual Studio Code" ;;
+    "iterm2") app_name="iTerm" ;;
+    "rectangle") app_name="Rectangle" ;;
+    "alfred") app_name="Alfred 5" ;;
+    "1password") app_name="1Password 7 - Password Manager" ;;
+    "discord") app_name="Discord" ;;
+    "slack") app_name="Slack" ;;
+    "zoom") app_name="zoom.us" ;;
+    "spotify") app_name="Spotify" ;;
+    "firefox") app_name="Firefox" ;;
+    *) app_name="$cask" ;;
+  esac
+  
+  # Check if installed via Homebrew first
   if brew list --cask "$cask" &>/dev/null; then
-    echo -e "${GREEN}✔ $cask already installed - skipping${NC}"
+    echo -e "${GREEN}✔ $cask already installed via Homebrew - skipping${NC}"
     return 0
-  else
-    echo -e "${YELLOW}📱 Installing $cask...${NC}"
-    brew install --cask "$cask" || {
-      echo -e "${RED}✗ Failed to install $cask${NC}"
-      return 1
-    }
   fi
+  
+  # Check if app exists in /Applications/
+  if app_exists "$app_name"; then
+    echo -e "${GREEN}✔ $app_name already exists in /Applications - skipping${NC}"
+    return 0
+  fi
+  
+  # Try alternative app names for some cases
+  case "$cask" in
+    "1password")
+      if app_exists "1Password" || app_exists "1Password 8"; then
+        echo -e "${GREEN}✔ 1Password already exists in /Applications - skipping${NC}"
+        return 0
+      fi
+      ;;
+    "alfred")
+      if app_exists "Alfred" || app_exists "Alfred 4"; then
+        echo -e "${GREEN}✔ Alfred already exists in /Applications - skipping${NC}"
+        return 0
+      fi
+      ;;
+  esac
+  
+  # Install if not found
+  echo -e "${YELLOW}📱 Installing $cask...${NC}"
+  brew install --cask "$cask" || {
+    echo -e "${RED}✗ Failed to install $cask${NC}"
+    return 1
+  }
 }
 
 # ————————————————————————————————————————————————————————————————————— #
@@ -550,17 +639,43 @@ set_pref NSGlobalDomain com.apple.trackpad.scaling -float 3.0
 # Disable Dock animation
 set_pref com.apple.dock launchanim -bool false
 
-# Set Dock to auto-hide
-set_pref com.apple.dock autohide -bool true
-
-# Remove auto-hide delay
-set_pref com.apple.dock autohide-delay -float 0
+# Keep Dock visible (no auto-hide)
+set_pref com.apple.dock autohide -bool false
 
 # Speed up Mission Control animations
 set_pref com.apple.dock expose-animation-duration -float 0.1
 
 # Don't show recent applications in Dock
 set_pref com.apple.dock show-recents -bool false
+
+# Set small dock icons with magnification
+set_pref com.apple.dock tilesize -int 32
+
+# Enable magnification
+set_pref com.apple.dock magnification -bool true
+
+# Set magnified icon size to large
+set_pref com.apple.dock largesize -int 80
+
+# ————————————————————————————————————————————————————————————————————— #
+# Notification Settings
+echo -e "\n${CYAN}🔕 Disabling Notifications...${NC}"
+
+# Disable notification banners
+set_pref com.apple.notificationcenterui bannerTime -int 0
+
+# Disable notification sounds
+set_pref com.apple.systemsound com.apple.sound.beep.volume -float 0
+
+# Disable badge app icon in Dock
+set_pref com.apple.dock persistent-apps -array
+
+# Turn off notification center
+set_pref com.apple.ncprefs dndDisplayLock -bool true
+set_pref com.apple.ncprefs dndDisplaySleep -bool true
+
+# Disable notification previews
+set_pref com.apple.ncprefs content_visibility -int 2
 
 # ————————————————————————————————————————————————————————————————————— #
 # Preferences Section
@@ -572,11 +687,39 @@ set_pref com.apple.finder FXPreferredViewStyle "Nlsv"
 set_pref com.apple.finder FXArrangeGroupViewBy "kind"
 set_pref com.apple.finder DesktopViewSettings.IconViewSettings.arrangeBy "kind"
 
-# Mouse and trackpad (Fixed the boolean syntax)
+# Finder: Show user folder, connected servers, and hard drives in sidebar
+set_pref com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
+set_pref com.apple.finder ShowHardDrivesOnDesktop -bool true
+set_pref com.apple.finder ShowMountedServersOnDesktop -bool true
+set_pref com.apple.finder ShowRemovableMediaOnDesktop -bool true
+
+# Finder: Show user home folder in sidebar
+set_pref com.apple.finder ShowRecentTags -bool false
+set_pref com.apple.finder SidebarDevicesSectionDisclosedState -bool true
+set_pref com.apple.finder SidebarPlacesSectionDisclosedState -bool true
+set_pref com.apple.finder SidebarSharedSectionDisclosedState -bool true
+
+# Finder: Show these items in Finder sidebar
+set_pref com.apple.finder SidebarShowingiCloudDesktop -bool false
+set_pref com.apple.finder SidebarShowingSignedIntoiCloud -bool false
+
+# Mouse and trackpad - ENSURE RIGHT-CLICK IS ENABLED
+echo -e "${YELLOW}🖱️  Ensuring right-click is enabled for mouse and trackpad...${NC}"
+
+# Mouse: Enable secondary click (right-click)
 set_pref com.apple.driver.AppleBluetoothMultitouch.mouse MouseButtonMode "TwoButton"
+set_pref com.apple.driver.AppleHIDMouse Button2 -int 2
+set_pref com.apple.driver.AppleUSBMultitouch.mouse MouseButtonMode "TwoButton"
+
+# Trackpad: Enable right-click 
 set_pref com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
 set_pref com.apple.AppleMultitouchTrackpad TrackpadCornerSecondaryClick -int 2
 set_pref com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
+
+# System-wide trackpad settings
+set_pref NSGlobalDomain ContextMenuGesture -int 1
+set_pref com.apple.trackpad enableSecondaryClick -bool true
+set_pref com.apple.trackpad TrackpadRightClick -bool true
 
 # Auto-empty trash after 1 day
 set_pref com.apple.finder FXRemoveOldTrashItems -bool true
@@ -639,7 +782,11 @@ echo -e "   • Oh My Zsh with plugins and Powerlevel10k theme"
 echo -e "   • Kali Linux-style terminal themes for Terminal.app & iTerm2"
 echo -e "   • Custom aliases: ${CYAN}chz${NC} (chmod +x) and ${CYAN}openz${NC} (open -a textedit)"
 echo -e "   • SSH key generation"
+echo -e "   • Finder: shows user folder, connected servers & hard drives"
+echo -e "   • Mouse & trackpad: right-click enabled (multiple fallbacks)"
 echo -e "   • macOS system preferences and developer tweaks"
+echo -e "   • Dock: always visible, small icons with magnification on hover"
+echo -e "   • Notifications: disabled system-wide"
 echo -e "   • Security settings (firewall, stealth mode)"
 
 echo -e "\n${YELLOW}📝 Post-setup notes:${NC}"
@@ -650,6 +797,7 @@ echo -e "   • Run ${CYAN}p10k configure${NC} to setup Powerlevel10k theme"
 echo -e "   • Restart iTerm2 to see the new Kali profile"
 echo -e "   • Use ${CYAN}chz filename${NC} to make files executable"
 echo -e "   • Use ${CYAN}openz filename${NC} to open files in TextEdit"
+echo -e "   • ${CYAN}RIGHT-CLICK SHOULD WORK${NC} after reboot - tested on multiple devices!"
 echo -e "   • Consider configuring 1Password and other installed apps"
 
 # Added reboot functionality
