@@ -25,7 +25,7 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
-        -v12393498u: a dev install sctipt for lazy peopple. by final 2025
+        -v2.0.1: a dev install script for lazy people. by final 2025
 
 EOF
   printf "${NC}\n"
@@ -34,6 +34,16 @@ EOF
 banner
 
 echo -e "${CYAN}🔧 Starting macOS setup...${NC}"
+
+# ————————————————————————————————————————————————————————————————————— #
+# Sudo Keep-Alive
+echo -e "${YELLOW}🔑 This script requires sudo access for system preferences...${NC}"
+sudo -v
+
+# Keep sudo alive until script finishes
+while true; do sudo -n true; sleep 60; kill -0 "$" || exit; done 2>/dev/null &
+
+echo -e "${GREEN}✔ Sudo access granted${NC}"
 
 # ————————————————————————————————————————————————————————————————————— #
 # PHASE 1: System Tweaks & Preferences (Run First)
@@ -134,17 +144,11 @@ set_pref com.apple.dock show-recents -bool false
 # Browser Homepage Settings
 echo -e "\n${CYAN}🌐 Configuring Browser Homepages...${NC}"
 
-# Set Chrome homepage to Claude AI Projects
-set_pref com.google.Chrome DefaultSearchProviderSearchURL "https://claude.ai/projects"
-set_pref com.google.Chrome HomepageLocation "https://claude.ai/projects"
-set_pref com.google.Chrome RestoreOnStartup -int 4
-set_pref com.google.Chrome RestoreOnStartupURLs -array "https://claude.ai/projects"
-
 # Set Safari homepage to GitHub profile
 set_pref com.apple.Safari HomePage "https://github.com/heyfinal"
 
 # ————————————————————————————————————————————————————————————————————— #
-# Security & Firewall Configuration
+# Security & Firewall Configuration  
 echo -e "\n${CYAN}🛡️ Configuring Security & Firewall...${NC}"
 
 # Firewall: Check and enable only if not active
@@ -342,7 +346,6 @@ fi
 
 # Applications
 echo -e "\n${CYAN}📱 Installing Applications...${NC}"
-install_brew_cask "google-chrome" || SETUP_SUCCESS=false
 install_brew_cask "iterm2" || SETUP_SUCCESS=false
 install_brew_cask "rectangle" || SETUP_SUCCESS=false
 install_brew_cask "alfred" || SETUP_SUCCESS=false
@@ -382,14 +385,6 @@ else
   echo -e "${GREEN}✔ zsh-syntax-highlighting already installed - skipping${NC}"
 fi
 
-# Powerlevel10k theme
-if [[ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]]; then
-  echo -e "${YELLOW}⚡ Installing Powerlevel10k theme...${NC}"
-  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
-else
-  echo -e "${GREEN}✔ Powerlevel10k already installed - skipping${NC}"
-fi
-
 # Update .zshrc with plugins and theme
 if [[ -f "$HOME/.zshrc" ]]; then
   # Backup original .zshrc
@@ -398,8 +393,8 @@ if [[ -f "$HOME/.zshrc" ]]; then
   # Update plugins
   sed -i.bak 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting docker node npm)/' "$HOME/.zshrc"
   
-  # Update theme
-  sed -i.bak 's/ZSH_THEME="robbyrussell"/ZSH_THEME="powerlevel10k\/powerlevel10k"/' "$HOME/.zshrc"
+  # Keep the default robbyrussell theme (no Powerlevel10k)
+  echo -e "${GREEN}✔ Zsh plugins configured, keeping default theme${NC}"
   
   # Add useful aliases
   cat >> "$HOME/.zshrc" << 'EOF'
@@ -461,17 +456,17 @@ else
 fi
 
 # ————————————————————————————————————————————————————————————————————— #
-# Terminal Theme Configuration (Kali Linux Style)
-echo -e "\n${CYAN}🎨 Configuring Kali-style Terminal Themes...${NC}"
+# Terminal Theme Configuration
+echo -e "\n${CYAN}🎨 Configuring Terminal Themes...${NC}"
 
-# Configure iTerm2 with Kali-style theme
+# Configure iTerm2 with Kali-style theme (keep existing Kali theme)
 if [[ -d "/Applications/iTerm.app" ]]; then
   echo -e "${YELLOW}🖥️  Configuring iTerm2 Kali theme...${NC}"
   
   # Create iTerm2 profile directory if it doesn't exist
   mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles"
   
-  # Create Kali-style iTerm2 profile
+  # Create Kali-style iTerm2 profile (unchanged)
   cat > "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Kali.json" << 'EOF'
 {
   "Profiles": [
@@ -593,59 +588,16 @@ else
   echo -e "${YELLOW}⚠️  iTerm2 not found, skipping profile creation${NC}"
 fi
 
-# Configure Terminal.app with Kali-style theme
-echo -e "${YELLOW}🖥️  Configuring Terminal.app Kali theme...${NC}"
+# Configure Terminal.app with Homebrew theme
+echo -e "${YELLOW}🖥️  Setting Terminal.app to use Homebrew theme...${NC}"
 
-# Create a Terminal profile XML
-cat > "/tmp/Kali.terminal" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>BackgroundColor</key>
-	<data>
-	YnBsaXN0MDDUAQIDBAUGFRZYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-	AAGGoKMHCA9VJG51bGzTCQoLDA0OVU5TUkdCXE5TQ29sb3JTcGFjZVYkY2xhc3NPEBww
-	IDAgMCAxABABgAKABdIQERITWiRjbGFzc25hbWVYJGNsYXNzZXNXTlNDb2xvcqISFFhO
-	U09iamVjdF8QD05TA2V5ZWRBcmNoaXZlctEXGFRyb290gAEIERojLTI3O0FITltiaWtr
-	cnN6hIyPmKqtsgAAAAAAAAEBAAAAAAAAABkAAAAAAAAAAAAAAAAAAAC0
-	</data>
-	<key>Font</key>
-	<data>
-	YnBsaXN0MDDUAQIDBAUGGBlYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-	AAGGoKQHCBESVSRudWxs1AkKCwwNDg8QVk5TU2l6ZVhOU2ZGbGFnc1ZOU05hbWVWJGNs
-	YXNzI0AsAAAAAAAAEBCAAoADXxAOTWVzb G9MR1MgTkYgUmVndWxhctITFBUWWiRjbGFz
-	c25hbWVYJGNsYXNzZXNWTlNGb250ohUXWE5TT2JqZWN0XxAPTlNLZXllZEFyY2hpdmVy
-	0RobVHJvb3SAAQgRGiMtMjc8QktSWWJpcnR2eH+Ej5ifoqqttg==
-	</data>
-	<key>FontAntialias</key>
-	<true/>
-	<key>ProfileCurrentVersion</key>
-	<real>2.04</real>
-	<key>TextColor</key>
-	<data>
-	YnBsaXN0MDDUAQIDBAUGFRZYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-	AAGGoKMHCA9VJG51bGzTCQoLDA0OVU5TUkdCXE5TQ29sb3JTcGFjZVYkY2xhc3NPEBww
-	IDEgMCAxABABgAKABdIQERITWiRjbGFzc25hbWVYJGNsYXNzZXNXTlNDb2xvcqISFFhO
-	U09iamVjdF8QD05TA2V5ZWRBcmNoaXZlctEXGFRyb290gAEIERojLTI3O0FITltiaWtr
-	cnN6hIyPmKqtsgAAAAAAAAEBAAAAAAAAABkAAAAAAAAAAAAAAAAAAAC0
-	</data>
-	<key>name</key>
-	<string>Kali</string>
-	<key>type</key>
-	<string>Window Settings</string>
-</dict>
-</plist>
-EOF
+# Set Terminal to use the built-in "Homebrew" theme
+osascript -e 'tell application "Terminal" to set default settings to settings set "Homebrew"' 2>/dev/null || {
+  echo -e "${YELLOW}⚠️  Homebrew theme not found, using default theme${NC}"
+  osascript -e 'tell application "Terminal" to set default settings to settings set "Basic"' 2>/dev/null || true
+}
 
-# Import the Terminal profile
-open "/tmp/Kali.terminal"
-sleep 2
-
-# Set as default profile
-osascript -e 'tell application "Terminal" to set default settings to settings set "Kali"' 2>/dev/null || true
-
-echo -e "${GREEN}✔ Terminal.app Kali profile created and set as default${NC}"
+echo -e "${GREEN}✔ Terminal.app theme configured${NC}"
 
 # ————————————————————————————————————————————————————————————————————— #
 # SSH Key Setup
@@ -784,10 +736,11 @@ echo -e "   • Essential CLI tools (git, curl, jq, bat, eza, fzf, etc.)"
 echo -e "   • Development tools (Node.js, Python, Go, Rust, Docker)"
 echo -e "   • AI CLIs: GitHub Copilot, Claude, OpenAI"
 echo -e "   • Applications (iTerm2, Rectangle, Alfred, 1Password, Discord, Slack, Zoom)"
-echo -e "   • Oh My Zsh with plugins and Powerlevel10k theme"
-echo -e "   • Kali Linux-style terminal themes for Terminal.app & iTerm2"
+echo -e "   • Oh My Zsh with plugins (autosuggestions, syntax highlighting)"
+echo -e "   • iTerm2 Kali theme and Terminal.app Homebrew theme"
 echo -e "   • Custom aliases: ${CYAN}chz${NC} (chmod +x) and ${CYAN}openz${NC} (open -a textedit)"
 echo -e "   • SSH key generation"
+echo -e "   • Safari homepage set to https://github.com/heyfinal"
 echo -e "   • macOS system preferences and developer tweaks"
 echo -e "   • Security settings (firewall, stealth mode)"
 
@@ -796,7 +749,6 @@ echo -e "   • Configure GitHub Copilot: ${CYAN}gh auth login${NC} then ${CYAN}
 echo -e "   • Configure Claude CLI: ${CYAN}claude config${NC}"
 echo -e "   • Configure OpenAI CLI: ${CYAN}openai config${NC} (set your API key)"
 echo -e "   • Add your SSH public key to GitHub/GitLab"
-echo -e "   • Run ${CYAN}p10k configure${NC} to setup Powerlevel10k theme"
 echo -e "   • Restart iTerm2 to see the new Kali profile"
 echo -e "   • Use ${CYAN}chz filename${NC} to make files executable"
 echo -e "   • Use ${CYAN}openz filename${NC} to open files in TextEdit"
