@@ -47,13 +47,16 @@ update_status() {
 
 show_input() {
   local prompt="$1"
-  # Show input line (line 14)
+  # Show input line (line 14) and clear any previous content
   printf "\033[14;1H${CLEAR_LINE}${GREEN}${prompt}${NC}"
 }
 
 clear_input() {
-  # Clear input line
+  # Clear input line and the line above it to remove any residual text
   printf "\033[14;1H${CLEAR_LINE}"
+  printf "\033[13;1H\033[K"
+  printf "\033[15;1H\033[K"
+  printf "\033[16;1H\033[K"
 }
 
 # ————————————————————————————————————————————————————————————————————— #
@@ -201,15 +204,17 @@ else
   sleep 1
 fi
 
-# API Keys with validation
+# API Keys with validation (secure input)
 while true; do
   show_input "OpenAI API key (optional, starts with sk-proj- or sk-): "
-  read -r openai_api_key
+  read -s openai_api_key
   clear_input
+  # Clear entire screen area where key might have been displayed
+  printf "\033[13;1H\033[K\033[14;1H\033[K\033[15;1H\033[K\033[16;1H\033[K"
   
   if validate_api_key "$openai_api_key" "openai"; then
     if [[ -n "$openai_api_key" ]]; then
-      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ OpenAI API key entered${NC}"
+      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ OpenAI API key entered (hidden)${NC}"
       sleep 1
       clear_input
     fi
@@ -220,12 +225,14 @@ done
 
 while true; do
   show_input "Claude API key (optional, starts with sk-ant-): "
-  read -r claude_api_key
+  read -s claude_api_key
   clear_input
+  # Clear entire screen area where key might have been displayed
+  printf "\033[13;1H\033[K\033[14;1H\033[K\033[15;1H\033[K\033[16;1H\033[K"
   
   if validate_api_key "$claude_api_key" "claude"; then
     if [[ -n "$claude_api_key" ]]; then
-      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ Claude API key entered${NC}"
+      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ Claude API key entered (hidden)${NC}"
       sleep 1
       clear_input
     fi
@@ -234,15 +241,17 @@ while true; do
   clear_input
 done
 
-# GitHub Token for Copilot
+# GitHub Token for Copilot (secure input)
 while true; do
   show_input "GitHub token (for Copilot, optional, starts with ghp_): "
-  read -r github_token
+  read -s github_token
   clear_input
+  # Clear entire screen area where token might have been displayed
+  printf "\033[13;1H\033[K\033[14;1H\033[K\033[15;1H\033[K\033[16;1H\033[K"
   
   if validate_api_key "$github_token" "github"; then
     if [[ -n "$github_token" ]]; then
-      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ GitHub token entered${NC}"
+      printf "\033[14;1H${CLEAR_LINE}${GREEN}✔ GitHub token entered (hidden)${NC}"
       sleep 1
       clear_input
     fi
