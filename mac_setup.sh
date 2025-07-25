@@ -25,8 +25,7 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
-'-------------------------------------------------------'
--v12393498u.21: a dev install sctipt for lazy peopple. by final 2025
+        -v12393498u: a dev install sctipt for lazy peopple. by final 2025
 
 EOF
   printf "${NC}\n"
@@ -35,6 +34,12 @@ EOF
 banner
 
 echo -e "${CYAN}🔧 Starting macOS setup...${NC}"
+
+# ————————————————————————————————————————————————————————————————————— #
+# PHASE 1: System Tweaks & Preferences (Run First)
+# ————————————————————————————————————————————————————————————————————— #
+
+echo -e "\n${CYAN}⚙️  PHASE 1: Applying System Tweaks & Preferences...${NC}"
 
 # ————————————————————————————————————————————————————————————————————— #
 # Idempotent Preference Setter (Robust version)
@@ -52,9 +57,129 @@ set_pref() {
     echo -e "${GREEN}✔ Successfully set $domain $key${NC}"
   else
     echo -e "${RED}✗ Failed to set $domain $key${NC}"
+    SETUP_SUCCESS=false
     return 1
   fi
 }
+
+# ————————————————————————————————————————————————————————————————————— #
+# Finder Preferences
+echo -e "\n${CYAN}📁 Configuring Finder...${NC}"
+
+# Finder: List view and sort by kind
+set_pref com.apple.finder FXPreferredViewStyle "Nlsv"
+set_pref com.apple.finder FXArrangeGroupViewBy "kind"
+set_pref com.apple.finder DesktopViewSettings.IconViewSettings.arrangeBy "kind"
+
+# Show hidden files in Finder
+set_pref com.apple.finder AppleShowAllFiles -bool true
+
+# Show file extensions
+set_pref NSGlobalDomain AppleShowAllExtensions -bool true
+
+# Auto-empty trash after 1 day
+set_pref com.apple.finder FXRemoveOldTrashItems -bool true
+set_pref com.apple.finder FXRemoveOldTrashItemsAge -int 1
+
+# ————————————————————————————————————————————————————————————————————— #
+# Input Device Preferences
+echo -e "\n${CYAN}🖱️ Configuring Input Devices...${NC}"
+
+# Mouse and trackpad
+set_pref com.apple.driver.AppleBluetoothMultitouch.mouse MouseButtonMode "TwoButton"
+set_pref com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
+set_pref com.apple.AppleMultitouchTrackpad TrackpadCornerSecondaryClick -int 2
+set_pref com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
+
+# Enable tap to click
+set_pref com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
+set_pref com.apple.AppleMultitouchTrackpad Clicking -bool true
+
+# Increase trackpad speed
+set_pref NSGlobalDomain com.apple.trackpad.scaling -float 3.0
+
+# Enable full keyboard access for all controls
+set_pref NSGlobalDomain AppleKeyboardUIMode -int 3
+
+# Set a fast keyboard repeat rate
+set_pref NSGlobalDomain KeyRepeat -int 2
+set_pref NSGlobalDomain InitialKeyRepeat -int 15
+
+# Disable auto-correct
+set_pref NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
+
+# ————————————————————————————————————————————————————————————————————— #
+# System UI Preferences
+echo -e "\n${CYAN}🎨 Configuring System UI...${NC}"
+
+# Disable the "Are you sure you want to open this application?" dialog
+set_pref com.apple.LaunchServices LSQuarantine -bool false
+
+# Disable Dock animation
+set_pref com.apple.dock launchanim -bool false
+
+# Set Dock to auto-hide
+set_pref com.apple.dock autohide -bool true
+
+# Remove auto-hide delay
+set_pref com.apple.dock autohide-delay -float 0
+
+# Speed up Mission Control animations
+set_pref com.apple.dock expose-animation-duration -float 0.1
+
+# Don't show recent applications in Dock
+set_pref com.apple.dock show-recents -bool false
+
+# ————————————————————————————————————————————————————————————————————— #
+# Browser Homepage Settings
+echo -e "\n${CYAN}🌐 Configuring Browser Homepages...${NC}"
+
+# Set Chrome homepage to Claude AI Projects
+set_pref com.google.Chrome DefaultSearchProviderSearchURL "https://claude.ai/projects"
+set_pref com.google.Chrome HomepageLocation "https://claude.ai/projects"
+set_pref com.google.Chrome RestoreOnStartup -int 4
+set_pref com.google.Chrome RestoreOnStartupURLs -array "https://claude.ai/projects"
+
+# Set Safari homepage to GitHub profile
+set_pref com.apple.Safari HomePage "https://github.com/heyfinal"
+
+# ————————————————————————————————————————————————————————————————————— #
+# Security & Firewall Configuration
+echo -e "\n${CYAN}🛡️ Configuring Security & Firewall...${NC}"
+
+# Firewall: Check and enable only if not active
+firewall_status=$(defaults read /Library/Preferences/com.apple.alf globalstate 2>/dev/null || echo "0")
+if [[ "$firewall_status" -ne 1 ]]; then
+  echo -e "${YELLOW}🔁 Enabling firewall${NC}"
+  if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>/dev/null; then
+    echo -e "${GREEN}✔ Firewall enabled successfully${NC}"
+  else
+    echo -e "${RED}✗ Failed to enable firewall${NC}"
+    SETUP_SUCCESS=false
+  fi
+else
+  echo -e "${GREEN}✔ Firewall already enabled${NC}"
+fi
+
+# Firewall: Stealth Mode
+stealth_status=$(defaults read /Library/Preferences/com.apple.alf stealthenabled 2>/dev/null || echo "0")
+if [[ "$stealth_status" -ne 1 ]]; then
+  echo -e "${YELLOW}🔁 Enabling stealth mode${NC}"
+  if sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on 2>/dev/null; then
+    echo -e "${GREEN}✔ Stealth mode enabled successfully${NC}"
+  else
+    echo -e "${RED}✗ Failed to enable stealth mode${NC}"
+    SETUP_SUCCESS=false
+  fi
+else
+  echo -e "${GREEN}✔ Stealth mode already enabled${NC}"
+fi
+
+# ————————————————————————————————————————————————————————————————————— #
+# PHASE 2: Downloads & Installations (Run Second)  
+# ————————————————————————————————————————————————————————————————————— #
+
+echo -e "\n${CYAN}📦 PHASE 2: Starting Downloads & Installations...${NC}"
 
 # ————————————————————————————————————————————————————————————————————— #
 # Check if command exists
@@ -133,27 +258,27 @@ install_homebrew
 
 # Essential CLI tools
 echo -e "\n${CYAN}🔧 Installing Essential CLI Tools...${NC}"
-install_brew_package "git"
-install_brew_package "curl"
-install_brew_package "wget"
-install_brew_package "jq"
-install_brew_package "tree"
-install_brew_package "htop"
-install_brew_package "bat"
-install_brew_package "eza"
-install_brew_package "fzf"
-install_brew_package "ripgrep"
-install_brew_package "fd"
-install_brew_package "tldr"
+install_brew_package "git" || SETUP_SUCCESS=false
+install_brew_package "curl" || SETUP_SUCCESS=false
+install_brew_package "wget" || SETUP_SUCCESS=false
+install_brew_package "jq" || SETUP_SUCCESS=false
+install_brew_package "tree" || SETUP_SUCCESS=false
+install_brew_package "htop" || SETUP_SUCCESS=false
+install_brew_package "bat" || SETUP_SUCCESS=false
+install_brew_package "eza" || SETUP_SUCCESS=false
+install_brew_package "fzf" || SETUP_SUCCESS=false
+install_brew_package "ripgrep" || SETUP_SUCCESS=false
+install_brew_package "fd" || SETUP_SUCCESS=false
+install_brew_package "tldr" || SETUP_SUCCESS=false
 
 # Development tools
 echo -e "\n${CYAN}💻 Installing Development Tools...${NC}"
-install_brew_package "node"
-install_brew_package "python@3.12"
-install_brew_package "go"
-install_brew_package "rust"
-install_brew_package "docker"
-install_brew_package "docker-compose"
+install_brew_package "node" || SETUP_SUCCESS=false
+install_brew_package "python@3.12" || SETUP_SUCCESS=false
+install_brew_package "go" || SETUP_SUCCESS=false
+install_brew_package "rust" || SETUP_SUCCESS=false
+install_brew_package "docker" || SETUP_SUCCESS=false
+install_brew_package "docker-compose" || SETUP_SUCCESS=false
 
 # GitHub Copilot CLI
 echo -e "\n${CYAN}🤖 Installing GitHub Copilot CLI...${NC}"
@@ -217,13 +342,14 @@ fi
 
 # Applications
 echo -e "\n${CYAN}📱 Installing Applications...${NC}"
-install_brew_cask "iterm2"
-install_brew_cask "rectangle"
-install_brew_cask "alfred"
-install_brew_cask "1password"
-install_brew_cask "discord"
-install_brew_cask "slack"
-install_brew_cask "zoom"
+install_brew_cask "google-chrome" || SETUP_SUCCESS=false
+install_brew_cask "iterm2" || SETUP_SUCCESS=false
+install_brew_cask "rectangle" || SETUP_SUCCESS=false
+install_brew_cask "alfred" || SETUP_SUCCESS=false
+install_brew_cask "1password" || SETUP_SUCCESS=false
+install_brew_cask "discord" || SETUP_SUCCESS=false
+install_brew_cask "slack" || SETUP_SUCCESS=false
+install_brew_cask "zoom" || SETUP_SUCCESS=false
 
 # ————————————————————————————————————————————————————————————————————— #
 # Shell Enhancement Section
