@@ -476,59 +476,6 @@ if [[ -d "/Applications/iTerm.app" ]]; then
 EOF
 fi
 
-# Terminal.app - Create custom black transparent theme
-mkdir -p "$HOME/Library/Application Support/Terminal/Themes"
-cat > "$HOME/Library/Application Support/Terminal/Themes/BlackTransparent.terminal" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>BackgroundColor</key>
-    <data>
-    YnBsaXN0MDDUAQIDBAUGFRZYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-    AAGGoKMHCA9VJG51bGzTCQoLDA0OVU5TUkdCXE5TQ29sb3JTcGFjZVYkY2xhc3NPEBww
-    IDAgMCAwLjgAEAGAA4AE0hAREhNaJGNsYXNzbmFtZVgkY2xhc3Nlc1dOU0NvbG9yohIU
-    WE5TT2JqZWN0XxAPTlNLZXllZEFyY2hpdmVy0RcYVHJvb3SAAQgRGiMtMjc7QUhOW2Jp
-    a3KDjI+YqqO4uAAAAAAAAAEBAAAAAAAAABkAAAAAAAAAAAAAAAAAAAC6
-    </data>
-    <key>Font</key>
-    <data>
-    YnBsaXN0MDDUAQIDBAUGGBlYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-    AAGGoKQHCBESVSRudWxs1AkKCwwNDg8QVk5TU2l6ZVhOU2ZGbGFnc1ZOU05hbWVWJGNs
-    YXNzI0AoAAAAAAAAEBCAAoADXU1lbmxvLVJlZ3VsYXLSExQVFlokY2xhc3NuYW1lWCRj
-    bGFzc2VzVk5TRm9udKIVF1hOU09iamVjdF8QD05TS2V5ZWRBcmNoaXZlctEaG1Ryb290
-    gAEIERojLTI3PEJLUllgaWttdniGjJ2lprO2uwAAAAAAAAEBAAAAAAAAABwAAAAAAAAA
-    AAAAAAAAAAAAAL0=
-    </data>
-    <key>FontAntialias</key>
-    <true/>
-    <key>ProfileCurrentVersion</key>
-    <real>2.07</real>
-    <key>TextColor</key>
-    <data>
-    YnBsaXN0MDDUAQIDBAUGFRZYJHZlcnNpb25YJG9iamVjdHNZJGFyY2hpdmVyVCR0b3AS
-    AAGGoKMHCA9VJG51bGzTCQoLDA0OVU5TUkdCXE5TQ29sb3JTcGFjZVYkY2xhc3NPEBwx
-    IDEgMSAxABABgAKABdIQERITWiRjbGFzc25hbWVYJGNsYXNzZXNXTlNDb2xvcqISFFhO
-    U09iamVjdF8QD05TA2V5ZWRBcmNoaXZlctEXGFRyb290gAEIERojLTI3O0FITltiaWtr
-    cnN6hIyPmKqtsgAAAAAAAAEBAAAAAAAAABkAAAAAAAAAAAAAAAAAAAC0
-    </data>
-    <key>WindowOpacity</key>
-    <real>0.8</real>
-    <key>name</key>
-    <string>BlackTransparent</string>
-    <key>type</key>
-    <string>Window Settings</string>
-</dict>
-</plist>
-EOF
-
-# Import and set the custom theme
-open "$HOME/Library/Application Support/Terminal/Themes/BlackTransparent.terminal" 2>/dev/null || true
-sleep 2
-osascript -e 'tell application "Terminal" to set default settings to settings set "BlackTransparent"' 2>/dev/null || {
-  osascript -e 'tell application "Terminal" to set default settings to settings set "Basic"' 2>/dev/null || true
-}
-
 update_progress 11
 update_status "Installing rEFInd bootloader..."
 
