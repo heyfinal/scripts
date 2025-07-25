@@ -28,7 +28,7 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
-
+                                    -  v1039123123.6 by final
 EOF
   printf "${NC}\n"
 }
