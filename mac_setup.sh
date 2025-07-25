@@ -3,14 +3,15 @@ set -euo pipefail
 IFS=$'\n\t'
 
 LOG_FILE="/tmp/mac_setup.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Track success status and progress
 SETUP_SUCCESS=true
-TOTAL_STEPS=15
+TOTAL_STEPS=12
 CURRENT_STEP=0
 
 # ————————————————————————————————————————————————————————————————————— #
-# ANSI Colors
+# ANSI Colors & Control
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
@@ -18,27 +19,45 @@ TAN='\033[38;5;180m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+SAVE_CURSOR='\033[s'
+RESTORE_CURSOR='\033[u'
+CLEAR_LINE='\033[2K'
+
 # ————————————————————————————————————————————————————————————————————— #
-# Progress Function
-show_progress() {
+# UI Functions
+update_progress() {
   local step=$1
-  local description=$2
-  CURRENT_STEP=$step
-  
   local percent=$((step * 100 / TOTAL_STEPS))
-  local filled=$((percent * 40 / 100))
-  local empty=$((40 - filled))
+  local filled=$((percent * 50 / 100))
+  local empty=$((50 - filled))
   
   local bar=""
   for ((i=1; i<=filled; i++)); do bar+="█"; done
   for ((i=1; i<=empty; i++)); do bar+="░"; done
   
-  # Clear line and show progress
-  printf "\r\033[K${CYAN}Progress: [${bar}] ${percent}%% - ${description}${NC}"
+  # Update progress line (line 12)
+  printf "\033[12;1H${CLEAR_LINE}${CYAN}Progress: [${bar}] ${percent}%%${NC}"
+}
+
+update_status() {
+  local message="$1"
+  # Update status line (line 13)
+  printf "\033[13;1H${CLEAR_LINE}${YELLOW}Status: ${message}${NC}"
+}
+
+show_input() {
+  local prompt="$1"
+  # Show input line (line 14)
+  printf "\033[14;1H${CLEAR_LINE}${GREEN}${prompt}${NC}"
+}
+
+clear_input() {
+  # Clear input line
+  printf "\033[14;1H${CLEAR_LINE}"
 }
 
 # ————————————————————————————————————————————————————————————————————— #
-# Banner
+# Banner (Fixed Position)
 clear
 echo -en "${TAN}"
 cat << 'EOF'
@@ -54,9 +73,10 @@ cat << 'EOF'
         -v2.0.1: a dev install script for lazy people. by final 2025
 
 EOF
-printf "${NC}\n"
+printf "${NC}\n\n\n\n"  # Space for progress, status, and input lines
 
-show_progress 0 "Initializing..."
+update_progress 0
+update_status "Initializing setup..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Utility Functions
@@ -64,197 +84,233 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
-log() {
-  echo "$1" >> "$LOG_FILE"
+validate_api_key() {
+  local key="$1"
+  local expected_type="$2"
+  
+  if [[ -z "$key" ]]; then
+    return 0  # Empty is fine
+  fi
+  
+  case "$expected_type" in
+    "openai")
+      if [[ "$key" == sk-ant-* ]]; then
+        echo "ERROR: This looks like a Claude API key (starts with sk-ant-)"
+        echo "You entered it in the OpenAI field. Please check your keys."
+        return 1
+      elif [[ "$key" != sk-proj-* ]] && [[ "$key" != sk-* ]]; then
+        echo "WARNING: OpenAI API keys usually start with 'sk-proj-' or 'sk-'"
+        read -p "Continue anyway? (y/N): " response
+        [[ "$response" =~ ^[Yy]$ ]] || return 1
+      fi
+      ;;
+    "claude")
+      if [[ "$key" == sk-proj-* ]] || [[ "$key" == sk-* ]] && [[ "$key" != sk-ant-* ]]; then
+        echo "ERROR: This looks like an OpenAI API key"
+        echo "You entered it in the Claude field. Please check your keys."
+        return 1
+      elif [[ "$key" != sk-ant-* ]] && [[ -n "$key" ]]; then
+        echo "WARNING: Claude API keys start with 'sk-ant-'"
+        read -p "Continue anyway? (y/N): " response
+        [[ "$response" =~ ^[Yy]$ ]] || return 1
+      fi
+      ;;
+  esac
+  return 0
 }
 
 set_pref() {
-  local domain=$1
-  local key=$2
-  shift 2
-  local args=("$@")
-  
-  if defaults write "$domain" "$key" "${args[@]}" &>> "$LOG_FILE"; then
-    return 0
-  else
-    log "ERROR: Failed to set $domain $key"
-    SETUP_SUCCESS=false
-    return 1
-  fi
+  defaults write "$1" "$2" "${@:3}" 2>/dev/null || return 1
 }
 
-install_brew_package() {
-  local package=$1
-  if brew list "$package" &>/dev/null; then
-    return 0
-  else
-    if brew install "$package" &>> "$LOG_FILE"; then
-      return 0
-    else
-      log "ERROR: Failed to install $package"
-      SETUP_SUCCESS=false
-      return 1
-    fi
-  fi
+install_package() {
+  local package="$1"
+  brew list "$package" >/dev/null 2>&1 || brew install "$package" >/dev/null 2>&1
 }
 
-install_brew_cask() {
-  local cask=$1
-  if brew list --cask "$cask" &>/dev/null; then
-    return 0
-  else
-    if brew install --cask "$cask" &>> "$LOG_FILE"; then
-      return 0
-    else
-      log "ERROR: Failed to install $cask"
-      SETUP_SUCCESS=false
-      return 1
-    fi
-  fi
+install_cask() {
+  local cask="$1"
+  brew list --cask "$cask" >/dev/null 2>&1 || brew install --cask "$cask" >/dev/null 2>&1
 }
 
 # ————————————————————————————————————————————————————————————————————— #
-# User Input Collection
-echo -e "\n${CYAN}🔧 Collecting configuration...${NC}"
+# Configuration Collection
+update_status "Collecting user configuration..."
 
-# Git configuration
+# Git config
 if [[ -z "$(git config --global user.name 2>/dev/null)" ]]; then
-  read -p "Git username: " git_username
-  read -p "Git email: " git_email
+  show_input "Git username: "
+  read -r git_username
+  clear_input
+  
+  show_input "Git email: "
+  read -r git_email
+  clear_input
 else
   git_username=$(git config --global user.name)
   git_email=$(git config --global user.email)
-  echo -e "${GREEN}✔ Using existing Git config${NC}"
 fi
 
-# SSH key email
+# SSH key
 if [[ ! -f "$HOME/.ssh/id_ed25519" ]]; then
-  read -p "SSH key email: " ssh_email
-else
-  echo -e "${GREEN}✔ SSH key exists${NC}"
+  show_input "Email for SSH key: "
+  read -r ssh_email
+  clear_input
 fi
 
-# API Keys
-read -p "OpenAI API key (optional): " openai_api_key
-read -p "Claude API key (optional): " claude_api_key
+# API Keys with validation
+while true; do
+  show_input "OpenAI API key (optional, starts with sk-proj- or sk-): "
+  read -r openai_api_key
+  clear_input
+  
+  if validate_api_key "$openai_api_key" "openai"; then
+    break
+  fi
+done
 
-show_progress 1 "Starting setup..."
+while true; do
+  show_input "Claude API key (optional, starts with sk-ant-): "
+  read -r claude_api_key
+  clear_input
+  
+  if validate_api_key "$claude_api_key" "claude"; then
+    break
+  fi
+done
 
-# ————————————————————————————————————————————————————————————————————— #
+update_progress 1
+update_status "Setting up sudo access..."
+
 # Sudo setup
-sudo -v &>> "$LOG_FILE"
+sudo -v 2>/dev/null
 while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
-show_progress 2 "Configuring system preferences..."
+update_progress 2
+update_status "Configuring system preferences..."
 
 # ————————————————————————————————————————————————————————————————————— #
-# System Preferences (Silent)
+# System Preferences
 {
   # Finder
   set_pref com.apple.finder FXPreferredViewStyle "Nlsv"
   set_pref com.apple.finder AppleShowAllFiles -bool true
   set_pref NSGlobalDomain AppleShowAllExtensions -bool true
+  set_pref com.apple.finder FXRemoveOldTrashItems -bool true
   
-  # Input devices
+  # Input devices  
   set_pref com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -bool true
   set_pref NSGlobalDomain com.apple.trackpad.scaling -float 2.1
   set_pref NSGlobalDomain com.apple.mouse.scaling -float 2.1
   set_pref NSGlobalDomain KeyRepeat -int 2
   set_pref NSGlobalDomain InitialKeyRepeat -int 15
+  set_pref NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
   
-  # Dock
+  # Dock configuration
   set_pref com.apple.dock autohide -bool false
   set_pref com.apple.dock tilesize -int 32
   set_pref com.apple.dock magnification -bool true
   set_pref com.apple.dock largesize -int 80
   set_pref com.apple.dock static-only -bool true
   set_pref com.apple.dock show-recents -bool false
+  set_pref com.apple.dock launchanim -bool false
   
   # Security
-  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on &>> "$LOG_FILE"
-  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on &>> "$LOG_FILE"
+  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>/dev/null
+  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on 2>/dev/null
   
   # Browser
   set_pref com.apple.Safari HomePage "https://github.com/heyfinal"
+  set_pref com.apple.LaunchServices LSQuarantine -bool false
 } 2>/dev/null
 
-show_progress 3 "Installing Homebrew..."
+update_progress 3
+update_status "Installing Homebrew..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Homebrew
 if ! command_exists brew; then
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" &>> "$LOG_FILE"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >/dev/null 2>&1
+  
   if [[ $(uname -m) == "arm64" ]]; then
     echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
     eval "$(/opt/homebrew/bin/brew shellenv)"
   else
-    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
+    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile  
     eval "$(/usr/local/bin/brew shellenv)"
   fi
 fi
 
-show_progress 4 "Installing CLI tools..."
+update_progress 4
+update_status "Installing CLI tools..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # CLI Tools
-for package in git curl wget jq tree htop bat eza fzf ripgrep fd tldr; do
-  install_brew_package "$package"
+for pkg in git curl wget jq tree htop bat eza fzf ripgrep fd tldr; do
+  install_package "$pkg"
 done
 
-show_progress 6 "Installing development tools..."
+update_progress 5
+update_status "Installing development tools..."
 
 # ————————————————————————————————————————————————————————————————————— #
-# Development Tools
-for package in node "python@3.12" go rust docker docker-compose; do
-  install_brew_package "$package"
+# Development Tools  
+for pkg in node "python@3.12" go rust docker docker-compose; do
+  install_package "$pkg"
 done
 
-show_progress 8 "Installing AI CLIs..."
+update_progress 6
+update_status "Installing AI CLIs..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # AI CLIs
-install_brew_package "gh"
+install_package "gh"
 
+# GitHub Copilot
 if ! gh extension list 2>/dev/null | grep -q "github/gh-copilot"; then
-  gh extension install github/gh-copilot &>> "$LOG_FILE" || true
+  gh extension install github/gh-copilot >/dev/null 2>&1 || true
 fi
 
+# Claude CLI
 if ! command_exists claude; then
-  curl -fsSL https://claude.ai/cli/install.sh | sh &>> "$LOG_FILE" || true
+  curl -fsSL https://claude.ai/cli/install.sh | sh >/dev/null 2>&1 || true
 fi
 
+# OpenAI CLI
 if ! command_exists openai; then
   if command_exists npm; then
-    npm install -g openai-cli &>> "$LOG_FILE" || pip3 install openai &>> "$LOG_FILE" || true
+    npm install -g openai-cli >/dev/null 2>&1 || pip3 install openai >/dev/null 2>&1 || true
   else
-    pip3 install openai &>> "$LOG_FILE" || true
+    pip3 install openai >/dev/null 2>&1 || true
   fi
 fi
 
-show_progress 10 "Installing applications..."
+update_progress 7
+update_status "Installing applications..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Applications
 for app in iterm2 rectangle alfred 1password discord slack zoom; do
-  install_brew_cask "$app"
+  install_cask "$app"
 done
 
-show_progress 11 "Setting up shell..."
+update_progress 8
+update_status "Setting up shell environment..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Shell Setup
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
-  sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended &>> "$LOG_FILE"
+  sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended >/dev/null 2>&1
 fi
 
 ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 
 if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]]; then
-  git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" &>> "$LOG_FILE"
+  git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" >/dev/null 2>&1
 fi
 
 if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]]; then
-  git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" &>> "$LOG_FILE"
+  git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" >/dev/null 2>&1
 fi
 
 # Configure .zshrc
@@ -264,11 +320,11 @@ if [[ -f "$HOME/.zshrc" ]]; then
   
   cat >> "$HOME/.zshrc" << 'EOF'
 
-# Aliases
+# Custom aliases
 alias ll='eza -la --git'
 alias ls='eza'
-alias cat='bat' 
-alias chz='chmod +x'
+alias cat='bat'
+alias chz='chmod +x' 
 alias openz='open -a textedit'
 alias gs='git status'
 alias ga='git add'
@@ -279,105 +335,114 @@ alias gd='git diff'
 EOF
 fi
 
-show_progress 12 "Configuring Git and SSH..."
+update_progress 9
+update_status "Configuring Git and SSH..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Git & SSH
 git config --global user.name "$git_username" 2>/dev/null
 git config --global user.email "$git_email" 2>/dev/null
 git config --global init.defaultBranch main 2>/dev/null
+git config --global pull.rebase false 2>/dev/null
 
 if [[ ! -f "$HOME/.ssh/id_ed25519" && -n "${ssh_email:-}" ]]; then
-  ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519" -N "" &>> "$LOG_FILE"
-  eval "$(ssh-agent -s)" &>> "$LOG_FILE"
-  ssh-add "$HOME/.ssh/id_ed25519" &>> "$LOG_FILE"
+  ssh-keygen -t ed25519 -C "$ssh_email" -f "$HOME/.ssh/id_ed25519" -N "" >/dev/null 2>&1
+  eval "$(ssh-agent -s)" >/dev/null 2>&1
+  ssh-add "$HOME/.ssh/id_ed25519" >/dev/null 2>&1
 fi
 
-show_progress 13 "Configuring terminals..."
+update_progress 10
+update_status "Configuring terminal themes..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Terminal Themes
 if [[ -d "/Applications/iTerm.app" ]]; then
   mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles"
   cat > "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Kali.json" << 'EOF'
-{"Profiles":[{"Name":"Kali","Guid":"kali-linux-profile","Background Color":{"Red Component":0.0,"Green Component":0.0,"Blue Component":0.0},"Foreground Color":{"Red Component":0.0,"Green Component":1.0,"Blue Component":0.0}}]}
+{"Profiles":[{"Name":"Kali","Guid":"kali-linux-profile","Background Color":{"Red Component":0.0,"Green Component":0.0,"Blue Component":0.0},"Foreground Color":{"Red Component":0.0,"Green Component":1.0,"Blue Component":0.0},"Cursor Color":{"Red Component":0.0,"Green Component":1.0,"Blue Component":0.0}}]}
 EOF
 fi
 
 osascript -e 'tell application "Terminal" to set default settings to settings set "Homebrew"' 2>/dev/null || true
 
-show_progress 14 "Installing rEFInd..."
+update_progress 11
+update_status "Installing rEFInd bootloader..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # rEFInd
 if ! command_exists refind-install; then
   {
-    curl -L -o /tmp/refind.zip "https://sourceforge.net/projects/refind/files/latest/download"
-    cd /tmp && unzip -q refind.zip
+    curl -L -o /tmp/refind.zip "https://sourceforge.net/projects/refind/files/latest/download" 2>/dev/null
+    cd /tmp && unzip -q refind.zip 2>/dev/null
     REFIND_DIR=$(find /tmp -name "refind-bin-*" -type d | head -1)
+    
     if [[ -d "$REFIND_DIR" ]]; then
       cd "$REFIND_DIR"
-      sudo ./refind-install --yes
+      sudo ./refind-install --yes >/dev/null 2>&1
       
       # Install theme
       cd /tmp
-      git clone https://github.com/jpmvferreira/refind-ambience-deer-and-fireflies.git
+      git clone https://github.com/jpmvferreira/refind-ambience-deer-and-fireflies.git >/dev/null 2>&1
+      
       REFIND_PATH="/System/Volumes/Preboot/EFI/refind"
       [[ ! -d "$REFIND_PATH" ]] && REFIND_PATH="/boot/efi/EFI/refind"
+      
       if [[ -d "$REFIND_PATH" ]]; then
-        sudo cp -r refind-ambience-deer-and-fireflies/src/* "$REFIND_PATH/"
+        sudo cp -r refind-ambience-deer-and-fireflies/src/* "$REFIND_PATH/" >/dev/null 2>&1
       fi
     fi
-  } &>> "$LOG_FILE" || true
+  } || true
 fi
 
-show_progress 15 "Finalizing configuration..."
+update_progress 12
+update_status "Finalizing configuration..."
 
 # ————————————————————————————————————————————————————————————————————— #
 # Auto-configure APIs
 if [[ -n "${openai_api_key:-}" ]] && command_exists openai; then
-  echo "$openai_api_key" | openai config set-key &>> "$LOG_FILE" || true
+  echo "$openai_api_key" | openai config set-key >/dev/null 2>&1 || true
 fi
 
 if [[ -n "${claude_api_key:-}" ]] && command_exists claude; then
-  echo "$claude_api_key" | claude config &>> "$LOG_FILE" || true
+  echo "$claude_api_key" | claude config >/dev/null 2>&1 || true
 fi
 
 # Restart services
 killall Finder Dock SystemUIServer 2>/dev/null || true
 
 # ————————————————————————————————————————————————————————————————————— #
-# Summary
-printf "\r\033[K" # Clear progress line
-echo -e "\n${GREEN}🎉 Setup Complete!${NC}"
+# Completion
+update_status "Setup complete!"
+
+# Move to line 15 for final output
+printf "\033[15;1H"
 
 if [[ "$SETUP_SUCCESS" == true ]]; then
-  echo -e "${GREEN}✔ All components installed successfully${NC}"
-  echo -e "${CYAN}📋 Configured: System prefs • CLI tools • AI CLIs • Apps • rEFInd${NC}"
+  echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
+  echo -e "${CYAN}📋 Installed: System prefs • CLI tools • AI CLIs • Apps • rEFInd${NC}"
   
   if [[ -f "$HOME/.ssh/id_ed25519.pub" && -n "${ssh_email:-}" ]]; then
-    echo -e "\n${YELLOW}📋 Your SSH public key:${NC}"
+    echo -e "\n${YELLOW}📋 SSH Public Key (add to GitHub):${NC}"
     cat "$HOME/.ssh/id_ed25519.pub"
   fi
   
-  echo -e "\n${CYAN}💻 Rebooting in 10 seconds...${NC}"
+  echo -e "\n${CYAN}💻 Rebooting in 10 seconds (Ctrl+C to cancel)...${NC}"
   for i in {10..1}; do
-    printf "\rRebooting in $i seconds (Ctrl+C to cancel)..."
+    printf "\rRebooting in $i seconds..."
     sleep 1
   done
+  
   echo -e "\n${GREEN}🔄 Rebooting...${NC}"
   sudo reboot
 else
-  echo -e "${YELLOW}⚠️  Some errors occurred. Check log: ${LOG_FILE}${NC}"
+  echo -e "${YELLOW}⚠️  Setup completed with some errors.${NC}"
+  echo -e "${YELLOW}Check log: ${LOG_FILE}${NC}"
   
-  # Auto-open log on errors
+  # Auto-open log
   if command_exists code; then
     code "$LOG_FILE"
   elif command_exists open; then
-    open "$LOG_FILE"
-  else
-    echo -e "${RED}Recent errors:${NC}"
-    tail -10 "$LOG_FILE" | grep -i error || tail -10 "$LOG_FILE"
+    open "$LOG_FILE"  
   fi
   
   read -p "Reboot anyway? (y/N): " response
