@@ -309,17 +309,104 @@ update_progress 3
 update_status "Installing Homebrew..."
 
 # ————————————————————————————————————————————————————————————————————— #
-# Homebrew
+# Homebrew (Enhanced for OpenCore/Sequoia)
 if ! command_exists brew; then
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >/dev/null 2>&1
-  
-  if [[ $(uname -m) == "arm64" ]]; then
-    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  else
-    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile  
-    eval "$(/usr/local/bin/brew shellenv)"
+  # First, install Xcode Command Line Tools if not present
+  if ! xcode-select -p >/dev/null 2>&1; then
+    update_status "Checking for Xcode Command Line Tools..."
+    
+    # Clear progress area and show important notice
+    printf "\033[15;1H${CLEAR_LINE}${RED}⚠️  SCRIPT WILL PAUSE - USER ACTION REQUIRED${NC}\n"
+    printf "\033[16;1H${CLEAR_LINE}${YELLOW}Xcode Command Line Tools need to be installed (required for Homebrew)${NC}\n"
+    printf "\033[17;1H${CLEAR_LINE}${CYAN}This will:${NC}\n"
+    printf "\033[18;1H${CLEAR_LINE}${CYAN}  1. Open a dialog asking to install Command Line Tools${NC}\n"
+    printf "\033[19;1H${CLEAR_LINE}${CYAN}  2. Download ~500MB (may take 5-15 minutes depending on internet)${NC}\n"
+    printf "\033[20;1H${CLEAR_LINE}${CYAN}  3. Install automatically after download${NC}\n"
+    printf "\033[21;1H${CLEAR_LINE}${GREEN}Press any key to continue and trigger the installation...${NC}"
+    read -n 1 -s
+    
+    # Clear the notice area
+    for i in {15..21}; do
+      printf "\033[${i};1H${CLEAR_LINE}"
+    done
+    
+    update_status "Triggering Xcode Command Line Tools installation..."
+    xcode-select --install 2>/dev/null || true
+    
+    # Show pause notice
+    printf "\033[15;1H${CLEAR_LINE}${YELLOW}📥 SCRIPT PAUSED - Xcode Command Line Tools installing...${NC}\n"
+    printf "\033[16;1H${CLEAR_LINE}${CYAN}Please:${NC}\n"
+    printf "\033[17;1H${CLEAR_LINE}${CYAN}  1. Click 'Install' in the popup dialog${NC}\n"
+    printf "\033[18;1H${CLEAR_LINE}${CYAN}  2. Wait for download to complete (~5-15 minutes)${NC}\n"
+    printf "\033[19;1H${CLEAR_LINE}${CYAN}  3. Installation will finish automatically${NC}\n"
+    printf "\033[20;1H${CLEAR_LINE}${GREEN}Press any key when you see 'The software was installed' message...${NC}"
+    read -n 1 -s
+    
+    # Clear the pause notice
+    for i in {15..20}; do
+      printf "\033[${i};1H${CLEAR_LINE}"
+    done
+    
+    update_status "Xcode Command Line Tools installation completed"
   fi
+  
+  update_status "Installing Homebrew (this may take 5-10 minutes)..."
+  
+  # Show Homebrew installation notice
+  printf "\033[15;1H${CLEAR_LINE}${YELLOW}📦 Installing Homebrew - this may take 5-10 minutes${NC}\n"
+  printf "\033[16;1H${CLEAR_LINE}${CYAN}The script will continue automatically when complete...${NC}\n"
+  
+  # Try Homebrew installation with timeout and fallback
+  if timeout 600 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >/dev/null 2>&1; then
+    # Clear notice area
+    printf "\033[15;1H${CLEAR_LINE}\033[16;1H${CLEAR_LINE}"
+    update_status "Homebrew installed successfully"
+  else
+    # Fallback: Manual installation for OpenCore/problematic systems
+    printf "\033[15;1H${CLEAR_LINE}\033[16;1H${CLEAR_LINE}"
+    update_status "Standard install failed, trying manual installation..."
+    
+    printf "\033[15;1H${CLEAR_LINE}${YELLOW}⚠️  Standard Homebrew install failed, trying manual method...${NC}\n"
+    printf "\033[16;1H${CLEAR_LINE}${CYAN}This may take a few more minutes...${NC}\n"
+    
+    # Create homebrew directory structure manually
+    sudo mkdir -p /opt/homebrew 2>/dev/null || true
+    sudo chown -R $(whoami) /opt/homebrew 2>/dev/null || true
+    
+    # Download and extract Homebrew manually
+    cd /tmp
+    if curl -L https://github.com/Homebrew/brew/tarball/master | tar xz --strip 1 -C /opt/homebrew 2>/dev/null; then
+      printf "\033[15;1H${CLEAR_LINE}\033[16;1H${CLEAR_LINE}"
+      update_status "Homebrew manual installation successful"
+    else
+      printf "\033[15;1H${CLEAR_LINE}\033[16;1H${CLEAR_LINE}"
+      printf "\033[15;1H${CLEAR_LINE}${RED}❌ Homebrew installation failed completely${NC}\n"
+      printf "\033[16;1H${CLEAR_LINE}${YELLOW}You'll need to install Homebrew manually after the script${NC}\n"
+      sleep 3
+      printf "\033[15;1H${CLEAR_LINE}\033[16;1H${CLEAR_LINE}"
+      update_status "Homebrew installation failed - continuing with other components"
+      SETUP_SUCCESS=false
+    fi
+  fi
+  
+  # Add Homebrew to PATH regardless of installation method
+  if [[ $(uname -m) == "arm64" ]]; then
+    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile 2>/dev/null || true
+    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
+  else
+    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile 2>/dev/null || true
+    eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+  fi
+  
+  # Final verification
+  if command_exists brew; then
+    update_status "Homebrew setup completed successfully"
+  else
+    update_status "Homebrew installation issues - some packages may fail"
+    SETUP_SUCCESS=false
+  fi
+else
+  update_status "Homebrew already installed - skipping"
 fi
 
 update_progress 4
