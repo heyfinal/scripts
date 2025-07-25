@@ -25,7 +25,8 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
-        -v12393498u.21: a dev install sctipt for lazy peopple. by final 2025
+'-------------------------------------------------------'
+-v12393498u.21: a dev install sctipt for lazy peopple. by final 2025
 
 EOF
   printf "${NC}\n"
