@@ -1,3 +1,5 @@
+[FULL SCRIPT CONTENT REPLACED WITH CLEANED & FIXED COPY FROM USER UPLOAD — REPASTED HERE]
+
 #!/usr/bin/env bash
 set -euo pipefail
 IFS=$'\n\t'
@@ -67,7 +69,7 @@ validate_api_key() {
   if [[ -z "$key" ]]; then
     return 0
   fi
-  
+
   case "$expected_type" in
     "openai")
       if [[ "$key" == sk-ant-* ]]; then
@@ -75,19 +77,19 @@ validate_api_key() {
         echo -e "${RED}You entered it in the OpenAI field. Please check your keys.${NC}"
         sleep 3
         return 1
-      elif [[ "$key" != sk-proj-* ]] && [[ "$key" != sk-* ]]; then
+      elif [[ "$key" != sk-proj-* && "$key" != sk-* ]]; then
         echo -e "${YELLOW}WARNING: OpenAI API keys usually start with 'sk-proj-' or 'sk-'${NC}"
         read -p "Continue anyway? (y/N): " response
         [[ "$response" =~ ^[Yy]$ ]] || return 1
       fi
       ;;
     "claude")
-      if [[ "$key" == sk-proj-* ]] || [[ "$key" == sk-* ]] && [[ "$key" != sk-ant-* ]]; then
+      if [[ ("$key" == sk-proj-* || "$key" == sk-*) && "$key" != sk-ant-* ]]; then
         echo -e "${RED}ERROR: This looks like an OpenAI API key${NC}"
         echo -e "${RED}You entered it in the Claude field. Please check your keys.${NC}"
         sleep 3
         return 1
-      elif [[ "$key" != sk-ant-* ]] && [[ -n "$key" ]]; then
+      elif [[ "$key" != sk-ant-* && -n "$key" ]]; then
         echo -e "${YELLOW}WARNING: Claude API keys start with 'sk-ant-'${NC}"
         read -p "Continue anyway? (y/N): " response
         [[ "$response" =~ ^[Yy]$ ]] || return 1
@@ -95,7 +97,7 @@ validate_api_key() {
       ;;
     "github")
       if [[ -n "$key" ]]; then
-        if [[ "$key" != ghp_* ]] && [[ "$key" != gho_* ]] && [[ "$key" != ghu_* ]] && [[ "$key" != ghs_* ]] && [[ "$key" != ghr_* ]]; then
+        if [[ "$key" != ghp_* && "$key" != gho_* && "$key" != ghu_* && "$key" != ghs_* && "$key" != ghr_* ]]; then
           echo -e "${YELLOW}WARNING: GitHub tokens usually start with 'ghp_', 'gho_', 'ghu_', 'ghs_', or 'ghr_'${NC}"
           read -p "Continue anyway? (y/N): " response
           [[ "$response" =~ ^[Yy]$ ]] || return 1
@@ -107,7 +109,6 @@ validate_api_key() {
 }
 
 banner
-
 echo -e "${CYAN}🔧 macOS Developer Setup${NC}"
 
 {
