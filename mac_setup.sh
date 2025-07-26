@@ -113,7 +113,7 @@ clear_config_display() {
 
 banner
 
-update_progress 0
+update_progress 0 "Initializing..."
 update_status "Initializing..."
 
 {
@@ -226,7 +226,7 @@ if load_config && [[ "${config_saved:-}" == "true" ]]; then
     sleep 2
     printf "\033[15;1H${CLEAR_LINE}"
     
-    update_progress 1
+    update_progress 1 "Starting setup with saved configuration..."
     update_status "Starting setup with saved configuration..."
   fi
 else
@@ -345,7 +345,7 @@ fi
 printf "\033[15;1H${CLEAR_LINE}"
 printf "\033[16;1H${CLEAR_LINE}"
 
-update_progress 1
+update_progress 1 "Starting setup..."
 update_status "Starting setup..."
 
 {
@@ -363,13 +363,13 @@ update_status "Starting setup..."
   echo "============================================="
 } >> "$LOG_FILE"
 
-update_progress 2
+update_progress 2 "Setting up sudo access..."
 update_status "Setting up sudo access..."
 
 sudo -v 2>/dev/null
-while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+while true; do sudo -n true; sleep 60; kill -0 "$" || exit; done 2>/dev/null &
 
-update_progress 2
+update_progress 2 "Configuring system preferences..."
 update_status "Configuring system preferences..."
 
 set_pref() {
@@ -404,7 +404,7 @@ set_pref() {
   set_pref com.apple.LaunchServices LSQuarantine -bool false
 } 2>/dev/null
 
-update_progress 3
+update_progress 3 "Installing Homebrew..."
 update_status "Installing Homebrew..."
 
 if ! command_exists brew; then
@@ -503,21 +503,21 @@ install_cask() {
   brew list --cask "$cask" >/dev/null 2>&1 || brew install --cask "$cask" >/dev/null 2>&1
 }
 
-update_progress 4
+update_progress 4 "Installing CLI tools..."
 update_status "Installing CLI tools..."
 
 for pkg in git curl wget jq tree htop bat eza fzf ripgrep fd tldr; do
   install_package "$pkg"
 done
 
-update_progress 5
+update_progress 5 "Installing development tools..."
 update_status "Installing development tools..."
 
 for pkg in node "python@3.12" go rust docker docker-compose; do
   install_package "$pkg"
 done
 
-update_progress 6
+update_progress 6 "Installing AI CLIs..."
 update_status "Installing AI CLIs..."
 
 install_package "gh"
@@ -542,14 +542,14 @@ if ! command_exists openai; then
   fi
 fi
 
-update_progress 7
+update_progress 7 "Installing applications..."
 update_status "Installing applications..."
 
 for app in iterm2 rectangle alfred 1password discord slack zoom; do
   install_cask "$app"
 done
 
-update_progress 8
+update_progress 8 "Setting up shell environment..."
 update_status "Setting up shell environment..."
 
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
@@ -586,7 +586,7 @@ alias gd='git diff'
 EOF
 fi
 
-update_progress 9
+update_progress 9 "Configuring Git and SSH..."
 update_status "Configuring Git and SSH..."
 
 git config --global user.name "$git_username" 2>/dev/null
@@ -600,7 +600,7 @@ if [[ ! -f "$HOME/.ssh/id_ed25519" && -n "${ssh_email:-}" ]]; then
   ssh-add "$HOME/.ssh/id_ed25519" >/dev/null 2>&1
 fi
 
-update_progress 10
+update_progress 10 "Configuring terminal themes..."
 update_status "Configuring terminal themes..."
 
 if [[ -d "/Applications/iTerm.app" ]]; then
@@ -637,7 +637,7 @@ if [[ -d "/Applications/iTerm.app" ]]; then
 EOF
 fi
 
-update_progress 11
+update_progress 11 "Installing rEFInd bootloader..."
 update_status "Installing rEFInd bootloader..."
 
 if ! command_exists refind-install; then
@@ -663,7 +663,7 @@ if ! command_exists refind-install; then
   } || true
 fi
 
-update_progress 12
+update_progress 12 "Finalizing configuration..."
 update_status "Finalizing configuration..."
 
 if [[ -n "${openai_api_key:-}" ]] && command_exists openai; then
@@ -676,6 +676,7 @@ fi
 
 killall Finder Dock SystemUIServer 2>/dev/null || true
 
+update_progress 12 "Setup complete!"
 update_status "Setup complete!"
 
 printf "\033[15;1H"
