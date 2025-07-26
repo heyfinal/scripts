@@ -419,8 +419,18 @@ fi
 
 echo -e "${YELLOW}🎨 Configuring terminal themes...${NC}"
 if [[ -d "/Applications/iTerm.app" ]]; then
-  mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles"
-  cat > "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Kali.json" << 'EOF'
+  ITERM_PROFILES_DIR="$HOME/Library/Application Support/iTerm2/DynamicProfiles"
+  
+  # Ensure the directory exists with error handling
+  if ! mkdir -p "$ITERM_PROFILES_DIR" 2>/dev/null; then
+    echo -e "${RED}❌ Failed to create iTerm2 profiles directory${NC}" | tee -a "$LOG_FILE"
+    echo "ERROR: Could not create directory: $ITERM_PROFILES_DIR" >> "$LOG_FILE"
+    SETUP_SUCCESS=false
+  else
+    echo "✔ iTerm2 profiles directory created/verified: $ITERM_PROFILES_DIR" >> "$LOG_FILE"
+    
+    # Create the Kali theme configuration with error handling
+    if cat > "$ITERM_PROFILES_DIR/Kali.json" << 'EOF'
 {
   "Profiles": [
     {
@@ -447,6 +457,18 @@ if [[ -d "/Applications/iTerm.app" ]]; then
   ]
 }
 EOF
+    then
+      echo -e "${GREEN}✔ iTerm2 Kali theme configured${NC}"
+      echo "✔ iTerm2 Kali theme created successfully" >> "$LOG_FILE"
+    else
+      echo -e "${RED}❌ Failed to create iTerm2 Kali theme${NC}" | tee -a "$LOG_FILE"
+      echo "ERROR: Could not write to file: $ITERM_PROFILES_DIR/Kali.json" >> "$LOG_FILE"
+      SETUP_SUCCESS=false
+    fi
+  fi
+else
+  echo -e "${YELLOW}⚠️  iTerm.app not found - skipping theme configuration${NC}"
+  echo "WARNING: iTerm.app not found at /Applications/iTerm.app" >> "$LOG_FILE"
 fi
 
 echo -e "${YELLOW}🚀 Installing rEFInd bootloader...${NC}"
