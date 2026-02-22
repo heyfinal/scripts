@@ -5,21 +5,46 @@
 # ─────────────────────────────────────────────────────────────────────────── #
 
 LOG_FILE="/tmp/mac_setup.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+> "$LOG_FILE"
 
-# ── Colors ─────────────────────────────────────────────────────────────────
+# ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 TAN='\033[38;5;180m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-# ── Banner ──────────────────────────────────────────────────────────────────
-banner() {
+# ── Terminal dimensions ──────────────────────────────────────────────────────
+TERM_ROWS=$(tput lines)
+TERM_COLS=$(tput cols)
+
+# Fixed header occupies rows 0-13
+# Row 0-8   : banner (9 lines incl. leading blank)
+# Row 9     : blank after banner
+# Row 10    : ━ separator
+# Row 11    : section status
+# Row 12    : overall progress bar
+# Row 13    : ━ separator
+# Row 14+   : scroll region (all output goes here)
+SECTION_ROW=11
+PROGRESS_ROW=12
+SCROLL_START=14
+
+TOTAL_SECTIONS=12
+CURRENT_SECTION=0
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+log() { printf '%s\n' "$*" >> "$LOG_FILE"; }
+
+# ── Draw the fixed header (called once) ──────────────────────────────────────
+draw_header() {
+  tput clear
+  tput cup 0 0
+
   echo -en "${TAN}"
-  cat << 'EOF'
+  cat << 'BANNER'
 
        ,,             ,...                   ,,
      `7MM           .d' ""                 `7MM   mm
@@ -29,104 +54,183 @@ banner() {
 8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM
 `Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM
  `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo
-
-EOF
+BANNER
   printf "${NC}\n"
+  # Row 10: separator
+  printf "${TAN}"; printf '━%.0s' $(seq 1 "$TERM_COLS"); printf "${NC}\n"
+  # Row 11: section name placeholder
+  printf "  ${CYAN}⬡${NC}  %-$((TERM_COLS - 5))s\n" "Initializing..."
+  # Row 12: overall progress placeholder
+  printf "  ${TAN}Overall${NC} [%-40s] %3d%%  %s\n" "" 0 ""
+  # Row 13: separator
+  printf "${TAN}"; printf '━%.0s' $(seq 1 "$TERM_COLS"); printf "${NC}\n"
+
+  # Lock scroll region to rows 14+ — banner stays frozen above
+  tput csr $SCROLL_START $((TERM_ROWS - 1))
+  tput cup $SCROLL_START 0
 }
 
-clear
-banner
+# ── Update section name + overall progress bar in frozen header ───────────────
+update_section() {
+  local name="$1"
+  ((CURRENT_SECTION++))
+  local pct=$(( CURRENT_SECTION * 100 / TOTAL_SECTIONS ))
+  local bar_width=40
+  local filled=$(( CURRENT_SECTION * bar_width / TOTAL_SECTIONS ))
+  local i; local bar=""
+  for ((i=0; i<filled; i++));     do bar+="█"; done
+  for ((i=filled; i<bar_width; i++)); do bar+="░"; done
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
-ok()      { echo -e "${GREEN}  ✓${NC}  $1"; }
-info()    { echo -e "${CYAN}  →${NC}  $1"; }
-warn()    { echo -e "${YELLOW}  ⚠${NC}  $1"; }
-section() { echo -e "\n${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  $1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+  tput sc
+    tput cup $SECTION_ROW 0; tput el
+    printf "  ${CYAN}⬡${NC}  ${BOLD}%s${NC}  ${CYAN}(%d/%d)${NC}" "$name" "$CURRENT_SECTION" "$TOTAL_SECTIONS"
+    tput cup $PROGRESS_ROW 0; tput el
+    printf "  ${TAN}Overall${NC} [${TAN}%s${NC}] %3d%%  ${CYAN}%d${NC}/${TOTAL_SECTIONS} sections complete" \
+      "$bar" "$pct" "$CURRENT_SECTION"
+  tput rc
 
-brew_pkg() {
-  if brew list "$1" &>/dev/null 2>&1; then
-    ok "$1 already installed"
-  else
-    info "Installing $1..."
-    brew install "$1" 2>&1 || warn "Failed: $1"
-  fi
+  log ""
+  log "━━━ Section $CURRENT_SECTION/$TOTAL_SECTIONS: $name ━━━"
 }
 
-brew_cask() {
-  if brew list --cask "$1" &>/dev/null 2>&1; then
-    ok "$1 already installed"
-  else
-    info "Installing $1..."
-    brew install --cask "$1" 2>&1 || warn "Failed: $1"
-  fi
+# ── In-scroll progress bar — updates the same line with \r ───────────────────
+item_progress() {
+  local label="$1"
+  local current=$2
+  local total=$3
+  local bar_width=28
+  local pct=$(( current * 100 / total ))
+  local filled=$(( current * bar_width / total ))
+  local i; local bar=""
+  for ((i=0; i<filled; i++));      do bar+="█"; done
+  for ((i=filled; i<bar_width; i++)); do bar+="░"; done
+  printf "\r  ${CYAN}[${TAN}%s${CYAN}]${NC} %3d%%  %-36s" "$bar" "$pct" "$label"
 }
 
-pipx_pkg() {
-  if pipx list 2>/dev/null | grep -q "package $1"; then
-    ok "$1 already installed"
-  else
-    info "Installing $1 via pipx..."
-    pipx install "$1" 2>&1 || warn "Failed: $1"
-  fi
+# ── Helpers ──────────────────────────────────────────────────────────────────
+ok()   { printf "${GREEN}  ✓${NC}  %s\n" "$1" | tee -a "$LOG_FILE"; }
+info() { printf "${CYAN}  →${NC}  %s\n" "$1" | tee -a "$LOG_FILE"; }
+warn() { printf "${YELLOW}  ⚠${NC}  %s\n" "$1" | tee -a "$LOG_FILE"; }
+
+# ── Batch install with per-item progress bar ──────────────────────────────────
+install_brew_batch() {
+  local section_label="$1"; shift
+  local pkgs=("$@")
+  local total=${#pkgs[@]}
+  local i=0
+  for pkg in "${pkgs[@]}"; do
+    ((i++))
+    item_progress "$pkg" "$i" "$total"
+    if brew list "$pkg" &>/dev/null 2>&1; then
+      log "skip (installed): $pkg"
+    else
+      brew install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+    fi
+  done
+  printf "\r  ${GREEN}✓${NC}  %-65s\n" "$section_label ($total packages)"
 }
 
-# ── Homebrew check ──────────────────────────────────────────────────────────
+install_cask_batch() {
+  local section_label="$1"; shift
+  local pkgs=("$@")
+  local total=${#pkgs[@]}
+  local i=0
+  for pkg in "${pkgs[@]}"; do
+    ((i++))
+    item_progress "$pkg" "$i" "$total"
+    if brew list --cask "$pkg" &>/dev/null 2>&1; then
+      log "skip (installed): $pkg"
+    else
+      brew install --cask "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+    fi
+  done
+  printf "\r  ${GREEN}✓${NC}  %-65s\n" "$section_label ($total apps)"
+}
+
+install_pipx_batch() {
+  local pkgs=("$@")
+  local total=${#pkgs[@]}
+  local i=0
+  for pkg in "${pkgs[@]}"; do
+    ((i++))
+    item_progress "$pkg" "$i" "$total"
+    if pipx list 2>/dev/null | grep -q "package $pkg"; then
+      log "skip (installed): $pkg"
+    else
+      pipx install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+    fi
+  done
+  printf "\r  ${GREEN}✓${NC}  %-65s\n" "Python tools ($total packages)"
+}
+
+install_npm_batch() {
+  local pkgs=("$@")
+  local total=${#pkgs[@]}
+  local i=0
+  for pkg in "${pkgs[@]}"; do
+    ((i++))
+    item_progress "$pkg" "$i" "$total"
+    npm install -g "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+  done
+  printf "\r  ${GREEN}✓${NC}  %-65s\n" "npm globals ($total packages)"
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# Init
+# ════════════════════════════════════════════════════════════════════════════
+
+draw_header
+
+# Homebrew check
 if ! command -v brew &>/dev/null; then
+  tput csr 0 $((TERM_ROWS - 1))
+  tput cup $((TERM_ROWS - 1)) 0
   echo ""
-  warn "Homebrew is not installed."
-  echo ""
-  echo "  Run this command first, then re-run this script:"
+  warn "Homebrew not found. Install it first, then re-run this script:"
   echo ""
   echo -e "  ${CYAN}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
   echo ""
   exit 1
 fi
 
-# Detect Apple Silicon vs Intel
 ARCH=$(uname -m)
-if [[ "$ARCH" == "arm64" ]]; then
-  HOMEBREW_PREFIX="/opt/homebrew"
-else
-  HOMEBREW_PREFIX="/usr/local"
-fi
-ok "Homebrew found at $HOMEBREW_PREFIX"
+[[ "$ARCH" == "arm64" ]] && HOMEBREW_PREFIX="/opt/homebrew" || HOMEBREW_PREFIX="/usr/local"
+ok "Homebrew found ($HOMEBREW_PREFIX)"
 
-# ── Sudo primer ─────────────────────────────────────────────────────────────
-echo ""
-info "This script requires sudo for some steps. Enter your password once:"
+# Sudo — prime once, keep alive
+info "Sudo required — enter your password once:"
 sudo -v
-# Keep sudo alive for the duration of the script
 while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 SUDO_PID=$!
-trap "kill $SUDO_PID 2>/dev/null; exit" INT TERM EXIT
+cleanup() {
+  kill "$SUDO_PID" 2>/dev/null || true
+  # Restore full scroll region on exit
+  tput csr 0 $((TERM_ROWS - 1))
+  tput cup $((TERM_ROWS - 1)) 0
+  echo ""
+}
+trap cleanup INT TERM EXIT
 
 # ════════════════════════════════════════════════════════════════════════════
-section "1 · macOS System Preferences"
+update_section "macOS System Preferences"
 # ════════════════════════════════════════════════════════════════════════════
 
-# ── Dock ─────────────────────────────────────────────────────────────────────
 info "Dock..."
 defaults write com.apple.dock tilesize -int 32
 defaults write com.apple.dock magnification -bool true
 defaults write com.apple.dock largesize -int 64
 defaults write com.apple.dock orientation -string "bottom"
 defaults write com.apple.dock show-recents -bool false
-ok "Dock: small icons, magnify on hover, bottom, no recent apps"
+ok "Dock: small icons, magnify on hover, bottom, no recents"
 
-# ── Mouse ─────────────────────────────────────────────────────────────────────
-info "Mouse..."
+info "Mouse / keyboard..."
 defaults write -g com.apple.mouse.scaling -float 3.0
 defaults write com.apple.AppleMultitouchMouse MouseButtonMode -string "TwoButton"
 defaults write -g com.apple.swipescrolldirection -bool false
-ok "Mouse: max speed, right-click on, scroll non-reverse"
-
-# ── Keyboard ─────────────────────────────────────────────────────────────────
-info "Keyboard..."
 defaults write -g InitialKeyRepeat -int 15
 defaults write -g KeyRepeat -int 2
-ok "Keyboard: fast repeat, short delay"
+ok "Mouse: max speed, right-click, scroll non-reverse | Keyboard: fast repeat"
 
-# ── Finder ───────────────────────────────────────────────────────────────────
 info "Finder..."
 defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
 defaults write com.apple.finder AppleShowAllFiles -bool true
@@ -136,40 +240,22 @@ defaults write com.apple.finder ShowStatusBar -bool true
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
 ok "Finder: list view, hidden files, all extensions, path+status bar, folders first"
 
-# ── TextEdit ─────────────────────────────────────────────────────────────────
-info "TextEdit..."
+info "TextEdit / Screenshots / Menu Bar..."
 defaults write com.apple.TextEdit RichText -int 0
-ok "TextEdit: default to plain text (.txt)"
-
-# ── Screenshots ──────────────────────────────────────────────────────────────
-info "Screenshots..."
 mkdir -p "$HOME/Screenshots"
 defaults write com.apple.screencapture location -string "$HOME/Screenshots"
 defaults write com.apple.screencapture type -string "jpg"
-ok "Screenshots → ~/Screenshots (JPG)"
-
-# ── Menu Bar ─────────────────────────────────────────────────────────────────
-info "Menu Bar..."
 defaults write com.apple.menuextra.clock ShowDate -int 1
 defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM  HH:mm"
-ok "Menu bar clock: date + day"
+ok "TextEdit: plain text | Screenshots → ~/Screenshots (JPG) | Clock: date + day"
 
-# ── Security ─────────────────────────────────────────────────────────────────
-info "Security..."
+info "Security / Power / Misc..."
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>/dev/null || true
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on 2>/dev/null || true
 defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
-ok "Firewall on, stealth mode on, password required immediately on wake"
-
-# ── Power ────────────────────────────────────────────────────────────────────
-info "Power..."
 sudo pmset -c sleep 0
 sudo pmset -c disksleep 0
-ok "Sleep disabled on AC power"
-
-# ── Misc ─────────────────────────────────────────────────────────────────────
-info "Misc system settings..."
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
 defaults write com.apple.CrashReporter DialogType -string "none"
@@ -177,41 +263,28 @@ defaults write com.apple.LaunchServices LSQuarantine -bool false
 defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 sudo systemsetup -setusingnetworktime on 2>/dev/null || true
 chflags nohidden "$HOME/Library"
-ok "Expanded save panel, no crash dialogs, no quarantine prompt, tap-to-click on login, auto timezone, ~/Library visible"
+ok "Firewall+stealth | No sleep on AC | Password on wake | No quarantine dialogs | ~/Library visible"
 
-# Restart UI services
-killall Dock 2>/dev/null || true
-killall Finder 2>/dev/null || true
-killall SystemUIServer 2>/dev/null || true
+killall Dock Finder SystemUIServer 2>/dev/null || true
 
 # ════════════════════════════════════════════════════════════════════════════
-section "2 · Authorizations & Privacy"
+update_section "Authorizations & Privacy"
 # ════════════════════════════════════════════════════════════════════════════
 
-# Xcode license
-info "Accepting Xcode license..."
-sudo xcodebuild -license accept 2>/dev/null || true
-ok "Xcode license accepted"
-
-# Allow apps from identified developers (Gatekeeper stays on)
-info "Gatekeeper..."
+info "Xcode license + Gatekeeper..."
+sudo xcodebuild -license accept >> "$LOG_FILE" 2>&1 || true
 sudo spctl --global-enable 2>/dev/null || true
-ok "Gatekeeper enabled (identified developers allowed)"
+ok "Xcode license accepted | Gatekeeper enabled (identified developers)"
 
-# SSH key generation
 info "SSH key setup..."
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-
+mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
   ssh-keygen -t ed25519 -C "heyfinal" -f "$HOME/.ssh/id_ed25519" -N "" -q
-  ok "SSH key generated: ~/.ssh/id_ed25519"
+  ok "SSH ed25519 key generated"
 else
   ok "SSH ed25519 key already exists"
 fi
-
 ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519" 2>/dev/null || true
-
 if ! grep -q "ServerAliveInterval" "$HOME/.ssh/config" 2>/dev/null; then
   cat >> "$HOME/.ssh/config" << 'EOF'
 Host *
@@ -222,118 +295,85 @@ Host *
   IdentityFile ~/.ssh/id_ed25519
 EOF
   chmod 600 "$HOME/.ssh/config"
-  ok "SSH config written (~/.ssh/config)"
+  ok "SSH config written"
 else
-  ok "SSH config already configured"
+  ok "SSH config already present"
 fi
 
-
 # ════════════════════════════════════════════════════════════════════════════
-section "3 · Homebrew Packages"
+update_section "Homebrew Packages"
 # ════════════════════════════════════════════════════════════════════════════
 
 info "Updating Homebrew..."
-brew update 2>&1 | tail -1
+brew update >> "$LOG_FILE" 2>&1
+ok "Homebrew updated"
 
-# ── CLI Essentials ────────────────────────────────────────────────────────────
-info "CLI essentials..."
-for pkg in git gh wget curl jq yq fzf ripgrep bat eza fd tree htop bottom tldr zoxide watch duf tmux rsync gnupg; do
-  brew_pkg "$pkg"
-done
+install_brew_batch "CLI essentials" \
+  git gh wget curl jq yq fzf ripgrep bat eza fd tree htop bottom tldr zoxide watch duf tmux rsync gnupg
 
-# ── Dev Runtimes ──────────────────────────────────────────────────────────────
-info "Dev runtimes..."
-brew_pkg python@3.12
-brew_pkg uv
-brew_pkg pipx
-brew_pkg go
-brew_pkg openjdk
-
-# Java JAVA_HOME symlink
-sudo ln -sfn "$HOMEBREW_PREFIX/opt/openjdk/libexec/openjdk.jdk" /Library/Java/JavaVirtualMachines/openjdk.jdk 2>/dev/null || true
+install_brew_batch "Dev runtimes" \
+  python@3.12 uv pipx go openjdk
 
 # Rust
 if ! command -v rustup &>/dev/null; then
-  info "Installing Rust via rustup..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --quiet
-  ok "Rust installed"
+  item_progress "rust (rustup)" 1 1
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --quiet >> "$LOG_FILE" 2>&1
+  printf "\r  ${GREEN}✓${NC}  %-65s\n" "Rust installed via rustup"
 else
   ok "Rust already installed"
 fi
 
-# NVM + Node LTS
+# NVM + Node
 if [ ! -d "$HOME/.nvm" ]; then
-  info "Installing nvm..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh 2>/dev/null | bash 2>/dev/null
+  item_progress "nvm + node LTS" 1 1
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh 2>/dev/null | bash >> "$LOG_FILE" 2>&1
 fi
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
-nvm install --lts 2>/dev/null && nvm use --lts 2>/dev/null || true
-ok "Node LTS installed via nvm"
+nvm install --lts >> "$LOG_FILE" 2>&1 && nvm use --lts >> "$LOG_FILE" 2>&1 || true
+printf "\r  ${GREEN}✓${NC}  %-65s\n" "Node LTS installed via nvm"
 
-# ── Network / Security ────────────────────────────────────────────────────────
-info "Network & security tools..."
-for pkg in nmap netcat mtr httpie iperf3 whois dnsmasq; do
-  brew_pkg "$pkg"
-done
+install_brew_batch "Network & security" \
+  nmap netcat mtr httpie iperf3 whois dnsmasq
 
-# tshark (Wireshark CLI) — installed via cask which includes both
-# ── Database / Queue ──────────────────────────────────────────────────────────
-info "Database tools..."
-brew_pkg redis
-brew_pkg sqlite
+install_brew_batch "Database & queue" \
+  redis sqlite
 
-# Auto-start redis on login
-brew services start redis 2>/dev/null || true
+brew services start redis >> "$LOG_FILE" 2>&1 || true
 ok "Redis service started"
 
-# ── Containers ────────────────────────────────────────────────────────────────
-info "Container tools..."
-brew_pkg docker
-brew_pkg docker-compose
+install_brew_batch "Containers" \
+  docker docker-compose
 
-# ── Git Extras ────────────────────────────────────────────────────────────────
-info "Git extras..."
-brew_pkg git-lfs
-brew_pkg lazygit
-brew_pkg diff-so-fancy
-git lfs install --skip-repo 2>/dev/null || true
+install_brew_batch "Git extras" \
+  git-lfs lazygit diff-so-fancy
 
-# ── macOS Utilities ───────────────────────────────────────────────────────────
-info "macOS utilities..."
-brew_pkg mas
-brew_pkg dockutil
-brew_pkg switchaudio-osx
-brew_pkg blueutil
+git lfs install --skip-repo >> "$LOG_FILE" 2>&1 || true
+
+install_brew_batch "macOS utilities" \
+  mas dockutil switchaudio-osx blueutil
+
+# Symlink Java
+sudo ln -sfn "$HOMEBREW_PREFIX/opt/openjdk/libexec/openjdk.jdk" \
+  /Library/Java/JavaVirtualMachines/openjdk.jdk >> "$LOG_FILE" 2>&1 || true
+ok "Java symlinked to /Library/Java/JavaVirtualMachines"
 
 # ════════════════════════════════════════════════════════════════════════════
-section "4 · Applications"
+update_section "Applications (Casks)"
 # ════════════════════════════════════════════════════════════════════════════
 
-brew_cask iterm2
-brew_cask visual-studio-code
-brew_cask google-chrome
-brew_cask raycast
-brew_cask proxyman
-brew_cask wireshark
-brew_cask tableplus
-brew_cask insomnia
-brew_cask bruno
-brew_cask docker
-brew_cask balenaetcher
-brew_cask handbrake
-
-# Font for iTerm2 / powerlevel10k
-brew_cask font-meslo-lg-nerd-font
+install_cask_batch "Apps" \
+  iterm2 visual-studio-code google-chrome raycast proxyman wireshark \
+  tableplus insomnia bruno docker balenaetcher handbrake \
+  font-meslo-lg-nerd-font
 
 # ════════════════════════════════════════════════════════════════════════════
-section "5 · Shell Configuration"
+update_section "Shell Configuration"
 # ════════════════════════════════════════════════════════════════════════════
 
 ZSHRC="$HOME/.zshrc"
-
 if ! grep -q "# ── heyfinal dotmalt ──" "$ZSHRC" 2>/dev/null; then
-  info "Writing ~/.zshrc config..."
+  info "Writing ~/.zshrc..."
   cat >> "$ZSHRC" << ZSHRC_BLOCK
 
 # ── heyfinal dotmalt ────────────────────────────────────────────────────────
@@ -376,16 +416,16 @@ alias ports='lsof -i -P -n | grep LISTEN'
 alias myip='curl -s ifconfig.me'
 alias flushdns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
 ZSHRC_BLOCK
-  ok "~/.zshrc updated"
+  ok "~/.zshrc updated (PATH, nvm, zoxide, fzf, aliases)"
 else
   ok "~/.zshrc already configured"
 fi
 
-# fzf shell integration
-"$HOMEBREW_PREFIX/opt/fzf/install" --all --no-bash --no-fish --no-update-rc 2>/dev/null || true
+"$HOMEBREW_PREFIX/opt/fzf/install" --all --no-bash --no-fish --no-update-rc >> "$LOG_FILE" 2>&1 || true
+ok "fzf shell integration installed"
 
 # ════════════════════════════════════════════════════════════════════════════
-section "6 · Git Configuration"
+update_section "Git Configuration"
 # ════════════════════════════════════════════════════════════════════════════
 
 git config --global user.name "heyfinal"
@@ -398,7 +438,6 @@ git config --global alias.st status
 git config --global alias.co checkout
 git config --global alias.br branch
 git config --global alias.lg "log --oneline --graph --decorate --all"
-
 cat > "$HOME/.gitignore_global" << 'EOF'
 .DS_Store
 .env
@@ -414,53 +453,55 @@ node_modules/
 *.swp
 EOF
 git config --global core.excludesfile "$HOME/.gitignore_global"
-ok "Git configured (heyfinal, main, nano, diff-so-fancy, aliases)"
+ok "Git: heyfinal | main branch | nano | diff-so-fancy | aliases (st co br lg)"
 
 # ════════════════════════════════════════════════════════════════════════════
-section "7 · Python Environment"
+update_section "Python Environment"
 # ════════════════════════════════════════════════════════════════════════════
 
-pipx ensurepath 2>/dev/null || true
-
-for tool in black ruff mypy httpie yt-dlp rich-cli; do
-  pipx_pkg "$tool"
-done
+pipx ensurepath >> "$LOG_FILE" 2>&1 || true
+install_pipx_batch black ruff mypy httpie yt-dlp rich-cli
 
 # ════════════════════════════════════════════════════════════════════════════
-section "8 · AI CLIs"
+update_section "AI CLIs"
 # ════════════════════════════════════════════════════════════════════════════
 
-# Ensure npm is available
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
 
 if command -v npm &>/dev/null; then
-  info "Installing Claude Code..."
-  npm install -g @anthropic-ai/claude-code 2>/dev/null && ok "Claude Code installed" || warn "Claude Code install failed"
-
-  info "Installing OpenAI Codex..."
-  npm install -g @openai/codex 2>/dev/null && ok "Codex installed" || warn "Codex install failed"
-
-  info "Installing Gemini CLI..."
-  npm install -g @google/gemini-cli 2>/dev/null && ok "Gemini CLI installed" || warn "Gemini CLI install failed"
+  install_npm_batch \
+    @anthropic-ai/claude-code \
+    @openai/codex \
+    @google/gemini-cli
 else
-  warn "npm not available — skipping AI CLI installs. Run manually after restarting shell."
+  warn "npm not available — re-run after: source ~/.zshrc"
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
-section "9 · Claude Code — MCP Servers"
+update_section "Claude Code — MCP Servers"
 # ════════════════════════════════════════════════════════════════════════════
 
 mkdir -p "$HOME/databases"
 
-info "Writing MCP server config to ~/.claude.json..."
+info "Writing ~/.claude.json (13 MCP servers)..."
 
-# Load GH_TOKEN if available
-SECRETS_FILE="$HOME/.env_secrets"
 GH_TOKEN_VAL=""
-if [ -f "$SECRETS_FILE" ]; then
-  GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
-fi
+[ -f "$HOME/.env_secrets" ] && \
+  GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$HOME/.env_secrets" 2>/dev/null | cut -d'"' -f2 || echo "")
+
+MCP_SERVERS=(
+  "filesystem" "puppeteer" "memory" "github" "git"
+  "playwright" "sqlite" "postgres" "redis"
+  "sequential-thinking" "fetch" "duckduckgo" "youtube" "osquery"
+)
+TOTAL_MCP=${#MCP_SERVERS[@]}
+i=0
+for srv in "${MCP_SERVERS[@]}"; do
+  ((i++))
+  item_progress "$srv" "$i" "$TOTAL_MCP"
+  sleep 0.05  # visual beat — actual write is one shot below
+done
 
 cat > "$HOME/.claude.json" << EOF
 {
@@ -476,9 +517,7 @@ cat > "$HOME/.claude.json" << EOF
     "github": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GH_TOKEN_VAL}"
-      }
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "${GH_TOKEN_VAL}" }
     },
     "git": {
       "command": "uvx",
@@ -503,9 +542,7 @@ cat > "$HOME/.claude.json" << EOF
     "redis": {
       "command": "npx",
       "args": ["-y", "mcp-server-redis"],
-      "env": {
-        "REDIS_URL": "redis://localhost:6379"
-      }
+      "env": { "REDIS_URL": "redis://localhost:6379" }
     },
     "sequential-thinking": {
       "command": "npx",
@@ -530,16 +567,14 @@ cat > "$HOME/.claude.json" << EOF
   }
 }
 EOF
-ok "~/.claude.json written (13 MCP servers)"
+printf "\r  ${GREEN}✓${NC}  %-65s\n" "~/.claude.json written (14 MCP servers)"
 
 # ════════════════════════════════════════════════════════════════════════════
-section "10 · Claude Code — Settings & Config"
+update_section "Claude Code — Settings & Config"
 # ════════════════════════════════════════════════════════════════════════════
 
-mkdir -p "$HOME/.claude/hooks"
-mkdir -p "$HOME/.claude/backups"
+mkdir -p "$HOME/.claude/hooks" "$HOME/.claude/backups"
 
-# ── settings.json ────────────────────────────────────────────────────────────
 info "Writing ~/.claude/settings.json..."
 cat > "$HOME/.claude/settings.json" << 'EOF'
 {
@@ -597,13 +632,11 @@ cat > "$HOME/.claude/settings.json" << 'EOF'
   }
 }
 EOF
-ok "~/.claude/settings.json written (all tools allowed, hooks enabled)"
+ok "~/.claude/settings.json written"
 
-# ── Pre-backup hook ───────────────────────────────────────────────────────────
 info "Installing pre-backup hook..."
 cat > "$HOME/.claude/hooks/pre_backup.sh" << 'EOF'
 #!/bin/bash
-# Auto-backup files before Write/Edit operations
 FILE="${CLAUDE_TOOL_INPUT_FILE_PATH:-}"
 if [ -n "$FILE" ] && [ -f "$FILE" ]; then
   BACKUP_DIR="$HOME/.claude/backups/$(date +%Y%m%d)"
@@ -612,9 +645,8 @@ if [ -n "$FILE" ] && [ -f "$FILE" ]; then
 fi
 EOF
 chmod +x "$HOME/.claude/hooks/pre_backup.sh"
-ok "Pre-backup hook installed (~/.claude/hooks/pre_backup.sh)"
+ok "Pre-backup hook installed"
 
-# ── CLAUDE.md ─────────────────────────────────────────────────────────────────
 info "Writing ~/CLAUDE.md..."
 cat > "$HOME/CLAUDE.md" << 'EOF'
 # Claude Code — Global Configuration
@@ -661,43 +693,35 @@ Use `mcp__deepseek` tools if available
 ## Stack Reference
 - AI APIs: Anthropic Claude, OpenAI GPT-4, Google Gemini, DeepSeek
 - MCP Servers: filesystem, memory, github, git, puppeteer, playwright, sqlite, postgres, redis, sequential-thinking, fetch, duckduckgo, youtube, osquery
-- Python stack: aiohttp, fastapi, playwright, openai, google-generativeai, pandas, sqlalchemy, click, rich, psutil, paramiko
+- Python: aiohttp, fastapi, playwright, openai, google-generativeai, pandas, sqlalchemy, click, rich, psutil, paramiko
 - Runtime: Docker, Redis (local), SQLite
-- Shell tools: eza, bat, ripgrep, fzf, zoxide, lazygit, tmux
+- Shell: eza, bat, ripgrep, fzf, zoxide, lazygit, tmux
 EOF
 ok "~/CLAUDE.md written"
 
 # ════════════════════════════════════════════════════════════════════════════
-section "11 · API Keys"
+update_section "API Keys"
 # ════════════════════════════════════════════════════════════════════════════
 
 SECRETS_FILE="$HOME/.env_secrets"
-
-if [ ! -f "$SECRETS_FILE" ]; then
-  touch "$SECRETS_FILE"
-  chmod 600 "$SECRETS_FILE"
-fi
+[ ! -f "$SECRETS_FILE" ] && touch "$SECRETS_FILE" && chmod 600 "$SECRETS_FILE"
 
 prompt_key() {
-  local key_name="$1"
-  local current_val
-  current_val=$(grep "^export ${key_name}=" "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
-  if [ -n "$current_val" ]; then
-    ok "$key_name already set"
+  local key="$1"
+  local current
+  current=$(grep "^export ${key}=" "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
+  if [ -n "$current" ]; then
+    ok "$key already set"
     return
   fi
-  echo -n "  ${CYAN}→${NC}  $key_name: "
-  read -r input_val 2>/dev/null || input_val=""
-  if [ -n "$input_val" ]; then
-    echo "export ${key_name}=\"${input_val}\"" >> "$SECRETS_FILE"
-    ok "$key_name saved"
-  else
-    warn "$key_name skipped — add manually to ~/.env_secrets"
-  fi
+  printf "  ${CYAN}→${NC}  %s: " "$key"
+  read -r val 2>/dev/null || val=""
+  [ -n "$val" ] && echo "export ${key}=\"${val}\"" >> "$SECRETS_FILE" && ok "$key saved" \
+                || warn "$key skipped — add manually to ~/.env_secrets"
 }
 
 echo ""
-info "Enter API keys (press Enter to skip any):"
+info "Enter API keys (press Enter to skip):"
 echo ""
 prompt_key ANTHROPIC_API_KEY
 prompt_key OPENAI_API_KEY
@@ -711,38 +735,31 @@ ok "~/.env_secrets saved (chmod 600)"
 # Inject GH_TOKEN into MCP config
 GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
 if [ -n "$GH_TOKEN_VAL" ] && [ -f "$HOME/.claude.json" ]; then
-  # Only replace if still empty placeholder
-  sed -i '' "s/\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"\"/\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"${GH_TOKEN_VAL}\"/" "$HOME/.claude.json" 2>/dev/null || true
+  sed -i '' "s|\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"\"|\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"${GH_TOKEN_VAL}\"|" \
+    "$HOME/.claude.json" 2>/dev/null || true
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
-section "12 · iTerm2 Enhancements"
+update_section "iTerm2 Enhancements"
 # ════════════════════════════════════════════════════════════════════════════
 
-# Shell integration
 if [ ! -f "$HOME/.iterm2_shell_integration.zsh" ]; then
-  info "Installing iTerm2 shell integration..."
+  item_progress "shell integration" 1 3
   curl -sL https://iterm2.com/shell_integration/zsh -o "$HOME/.iterm2_shell_integration.zsh" 2>/dev/null || true
-  ok "iTerm2 shell integration installed"
 else
-  ok "iTerm2 shell integration already installed"
+  item_progress "shell integration" 1 3
 fi
 
-# Catppuccin Mocha color scheme
-info "Downloading Catppuccin Mocha iTerm2 theme..."
+item_progress "Catppuccin Mocha theme" 2 3
 THEME_PATH="$HOME/Downloads/Catppuccin-Mocha.itermcolors"
 curl -sL "https://raw.githubusercontent.com/catppuccin/iterm/main/colors/Catppuccin-Mocha.itermcolors" \
   -o "$THEME_PATH" 2>/dev/null || true
-if [ -f "$THEME_PATH" ]; then
-  open "$THEME_PATH" 2>/dev/null || true
-  ok "Catppuccin Mocha opened — click OK in iTerm2 to import"
-fi
+[ -f "$THEME_PATH" ] && open "$THEME_PATH" 2>/dev/null || true
 
-# tmux config
+item_progress "tmux.conf" 3 3
 if [ ! -f "$HOME/.tmux.conf" ]; then
-  info "Writing ~/.tmux.conf..."
   cat > "$HOME/.tmux.conf" << 'EOF'
-# iTerm2 native tmux mode: launch with  tmux -CC new-session
+# Launch with iTerm2 native mode: tmux -CC new-session
 set -g default-terminal "xterm-256color"
 set -ga terminal-overrides ",xterm-256color:Tc"
 set -g mouse on
@@ -751,41 +768,41 @@ set -g base-index 1
 set -g pane-base-index 1
 set -g status-bg black
 set -g status-fg white
-set -g status-left "#[fg=cyan] #S "
-set -g status-right "#[fg=yellow]%H:%M %d-%b "
+set -g status-left "#[fg=cyan] #S  "
+set -g status-right "#[fg=yellow]%H:%M  %d-%b "
 EOF
-  ok "~/.tmux.conf written (mouse on, 256color, status bar)"
-else
-  ok "~/.tmux.conf already exists"
 fi
-
-# iTerm2 status bar (set via defaults — requires iTerm2 restart to take effect)
-info "Configuring iTerm2 status bar..."
 defaults write com.googlecode.iterm2 ShowStatusBar -bool true 2>/dev/null || true
-ok "iTerm2 status bar enabled (restart iTerm2 to see it)"
+
+printf "\r  ${GREEN}✓${NC}  %-65s\n" "iTerm2: shell integration + Catppuccin Mocha + tmux.conf"
 
 # ════════════════════════════════════════════════════════════════════════════
-# Done
-# ════════════════════════════════════════════════════════════════════════════
+# Seal the overall progress bar at 100%
+tput sc
+  tput cup $PROGRESS_ROW 0; tput el
+  printf "  ${TAN}Overall${NC} [${GREEN}%s${NC}] ${GREEN}100%%${NC}  All %d sections complete ✓" \
+    "$(printf '█%.0s' $(seq 1 40))" "$TOTAL_SECTIONS"
+  tput cup $SECTION_ROW 0; tput el
+  printf "  ${GREEN}✓${NC}  ${BOLD}Setup complete${NC}"
+tput rc
 
+# ── Final summary ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  Setup complete.${NC}"
+printf "${TAN}"; printf '━%.0s' $(seq 1 "$TERM_COLS"); printf "${NC}\n"
 echo ""
-echo "  Manual steps remaining:"
-echo "  1. Restart iTerm2 → Preferences → Profile → Text → Font → MesloLGS NF"
-echo "  2. Grant Full Disk Access + Accessibility to iTerm2 in System Settings"
-echo "  3. Run: source ~/.zshrc"
-echo "  4. Start tmux with native iTerm2 mode: tmux -CC new-session"
+ok "All done. Manual steps:"
 echo ""
-echo "  Your SSH public key (add to GitHub → Settings → SSH Keys):"
+printf "  ${CYAN}1.${NC}  Restart iTerm2 → Preferences → Profile → Text → Font → ${BOLD}MesloLGS NF${NC}\n"
+printf "  ${CYAN}2.${NC}  System Settings → Privacy → Full Disk Access → add ${BOLD}iTerm2${NC}\n"
+printf "  ${CYAN}3.${NC}  Run: ${CYAN}source ~/.zshrc${NC}\n"
+printf "  ${CYAN}4.${NC}  iTerm2 native tmux mode: ${CYAN}tmux -CC new-session${NC}\n"
+printf "  ${CYAN}5.${NC}  Add ANTHROPIC_API_KEY to ${CYAN}~/.env_secrets${NC} if skipped above\n"
 echo ""
-cat "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || warn "No SSH key found"
+printf "  SSH public key (add to github.com/settings/keys):\n"
 echo ""
-echo -e "  Full log: ${CYAN}/tmp/mac_setup.log${NC}"
-echo -e "${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+printf "  ${CYAN}%s${NC}\n" "$(cat "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || echo 'key not found')"
 echo ""
-
-# Release sudo
-kill $SUDO_PID 2>/dev/null || true
-trap - INT TERM EXIT
+printf "  Full log: ${CYAN}%s${NC}\n" "$LOG_FILE"
+echo ""
+printf "${TAN}"; printf '━%.0s' $(seq 1 "$TERM_COLS"); printf "${NC}\n"
+echo ""
