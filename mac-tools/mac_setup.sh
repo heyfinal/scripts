@@ -1,36 +1,34 @@
 #!/usr/bin/env bash
-set -euo pipefail
-IFS=$'\n\t'
+# ─────────────────────────────────────────────────────────────────────────── #
+# Assumes Homebrew is already installed.
+# If not: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# ─────────────────────────────────────────────────────────────────────────── #
 
 LOG_FILE="/tmp/mac_setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-# ————————————————————————————————————————————————————————————————————— #
-# ANSI Colors
+# ── Colors ─────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 TAN='\033[38;5;180m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Track missing items
-missing_items=()
-
-# ————————————————————————————————————————————————————————————————————— #
-# Banner
+# ── Banner ──────────────────────────────────────────────────────────────────
 banner() {
   echo -en "${TAN}"
   cat << 'EOF'
 
-       ,,             ,...                   ,,         
-     `7MM           .d' ""                 `7MM   mm    
-       MM           dM`                      MM   MM    
-  ,M""bMM  .gP"Ya  mMMmm ,6"Yb.`7MM  `7MM    MM mmMMmm  
-,AP    MM ,M'   Yb  MM  8)   MM  MM    MM    MM   MM    
-8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM    
-`Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM    
- `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo 
+       ,,             ,...                   ,,
+     `7MM           .d' ""                 `7MM   mm
+       MM           dM`                      MM   MM
+  ,M""bMM  .gP"Ya  mMMmm ,6"Yb.`7MM  `7MM    MM mmMMmm
+,AP    MM ,M'   Yb  MM  8)   MM  MM    MM    MM   MM
+8MI    MM 8M""""""  MM   ,pm9MM  MM    MM    MM   MM
+`Mb    MM YM.    ,  MM  8M   MM  MM    MM    MM   MM
+ `Wbmd"MML.`Mbmmd'.JMML.`Moo9^Yo.`Mbod"YML..JMML. `Mbmo
 
 EOF
   printf "${NC}\n"
@@ -39,279 +37,764 @@ EOF
 clear
 banner
 
-echo -e "${CYAN}🔧 Starting macOS setup analysis...${NC}"
+# ── Helpers ─────────────────────────────────────────────────────────────────
+ok()      { echo -e "${GREEN}  ✓${NC}  $1"; }
+info()    { echo -e "${CYAN}  →${NC}  $1"; }
+warn()    { echo -e "${YELLOW}  ⚠${NC}  $1"; }
+section() { echo -e "\n${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  $1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
-# ————————————————————————————————————————————————————————————————————— #
-# Helper functions
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-brew_installed() {
-    brew list "$1" >/dev/null 2>&1
-}
-
-cask_installed() {
-    brew list --cask "$1" >/dev/null 2>&1
-}
-
-check_item() {
-    local name="$1"
-    local check_command="$2"
-    
-    echo -n "  ${name}... "
-    if eval "$check_command"; then
-        echo -e "${GREEN}✓ Installed${NC}"
-    else
-        echo -e "${RED}✗ Missing${NC}"
-        missing_items+=("$name")
-    fi
-    return 0  # Always return success to continue script execution
-}
-
-# ————————————————————————————————————————————————————————————————————— #
-# Check installations
-echo -e "\n${CYAN}📋 CHECKING CURRENT INSTALLATIONS:${NC}\n"
-
-echo -e "${YELLOW}🔧 Development Tools:${NC}"
-check_item "Xcode Command Line Tools" "xcode-select -p >/dev/null 2>&1"
-check_item "Homebrew" "command_exists brew"
-check_item "Git" "command_exists git"
-check_item "Node.js" "command_exists node"
-check_item "Python3" "command_exists python3"
-
-check_item "Docker" "command_exists docker"
-check_item "OpenAI CLI" "command_exists openai"
-
-echo -e "\n${YELLOW}🛠 CLI Utilities:${NC}"
-check_item "wget" "command_exists wget"
-check_item "curl" "command_exists curl"
-check_item "htop" "command_exists htop"
-check_item "tree" "command_exists tree"
-check_item "jq" "command_exists jq"
-check_item "fzf" "command_exists fzf"
-check_item "ripgrep (rg)" "command_exists rg"
-check_item "bat" "command_exists bat"
-
-echo -e "\n${YELLOW}💻 GUI Applications:${NC}"
-if command_exists brew; then
-    check_item "iTerm2" "cask_installed iterm2"
-    check_item "VLC" "cask_installed vlc"
-    check_item "The Unarchiver" "cask_installed the-unarchiver"
-else
-    echo -e "${RED}  Skipping GUI apps check (Homebrew not installed)${NC}"
-fi
-
-# ————————————————————————————————————————————————————————————————————— #
-# Idempotent Preference Setter
-set_pref() {
-  local domain=$1
-  local key=$2
-  local value=$3
-  local current
-  current=$(defaults read "$domain" "$key" 2>/dev/null || echo "__unset__")
-  if [[ "$current" != "$value" ]]; then
-    echo -e "${YELLOW}🔁 Setting $domain $key to $value${NC}"
-    defaults write "$domain" "$key" "$value"
+brew_pkg() {
+  if brew list "$1" &>/dev/null 2>&1; then
+    ok "$1 already installed"
   else
-    echo -e "${GREEN}✔ $domain $key is already $value${NC}"
+    info "Installing $1..."
+    brew install "$1" 2>&1 || warn "Failed: $1"
   fi
 }
 
-# ————————————————————————————————————————————————————————————————————— #
-# Apply system preferences (your existing code)
-echo -e "\n${CYAN}🛠 Checking System Preferences...${NC}"
-
-# Finder: List view and sort by kind
-set_pref com.apple.finder FXPreferredViewStyle "Nlsv"
-set_pref com.apple.finder FXArrangeGroupViewBy "kind"
-set_pref com.apple.finder DesktopViewSettings.IconViewSettings.arrangeBy "kind"
-
-# Mouse and trackpad
-set_pref com.apple.driver.AppleBluetoothMultitouch.mouse MouseButtonMode "TwoButton"
-set_pref com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
-set_pref com.apple.AppleMultitouchTrackpad TrackpadCornerSecondaryClick -int 2
-set_pref com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
-
-# Auto-empty trash after 1 day
-set_pref com.apple.finder FXRemoveOldTrashItems -bool true
-set_pref com.apple.finder FXRemoveOldTrashItemsAge -int 1
-
-# Firewall: Check and enable only if not active
-firewall_status=$(defaults read /Library/Preferences/com.apple.alf globalstate 2>/dev/null || echo "0")
-if [[ "$firewall_status" -ne 1 ]]; then
-  echo -e "${YELLOW}🔁 Enabling firewall${NC}"
-  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
-else
-  echo -e "${GREEN}✔ Firewall already enabled${NC}"
-fi
-
-# Firewall: Stealth Mode
-stealth_status=$(defaults read /Library/Preferences/com.apple.alf stealthenabled 2>/dev/null || echo "0")
-if [[ "$stealth_status" -ne 1 ]]; then
-  echo -e "${YELLOW}🔁 Enabling stealth mode${NC}"
-  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
-else
-  echo -e "${GREEN}✔ Stealth mode already enabled${NC}"
-fi
-
-# Firewall logging
-log_status=$(defaults read /Library/Preferences/com.apple.alf loggingenabled 2>/dev/null || echo "0")
-if [[ "$log_status" -ne 1 ]]; then
-  echo -e "${YELLOW}🔁 Enabling firewall logging${NC}"
-  sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setloggingmode on
-else
-  echo -e "${GREEN}✔ Firewall logging already enabled${NC}"
-fi
-
-# ————————————————————————————————————————————————————————————————————— #
-# Install missing items or show completion message
-
-if [[ ${#missing_items[@]} -eq 0 ]]; then
-    echo -e "\n${GREEN}🎉 Script has already busted inside your Mac dumbass${NC}"
-    exit 0
-fi
-
-echo -e "\n${CYAN}🚀 INSTALLING MISSING ITEMS (${#missing_items[@]} total):${NC}"
-for item in "${missing_items[@]}"; do
-    echo -e "${YELLOW}  • $item${NC}"
-done
-
-echo -e "\n${CYAN}⚡ Starting installations...${NC}\n"
-
-# Install Xcode Command Line Tools
-if [[ " ${missing_items[*]} " =~ " Xcode Command Line Tools " ]]; then
-    echo -e "${YELLOW}📦 Installing Xcode Command Line Tools...${NC}"
-    xcode-select --install || true
-fi
-
-# Install Homebrew with bulletproof redundancy
-install_homebrew() {
-    echo -e "${YELLOW}🍺 Installing Homebrew (bulletproof method)...${NC}"
-    
-    # Method 1: Official install script
-    echo -e "${CYAN}  Attempting official Homebrew installation...${NC}"
-    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null; then
-        echo -e "${GREEN}✓ Official installation successful${NC}"
-    else
-        echo -e "${RED}✗ Official installation failed, trying alternative method...${NC}"
-        
-        # Method 2: Manual git clone fallback
-        echo -e "${CYAN}  Attempting manual git installation...${NC}"
-        if [[ -d "/opt/homebrew" ]] || [[ -d "/usr/local/Homebrew" ]]; then
-            echo -e "${YELLOW}  Removing partial installation...${NC}"
-            sudo rm -rf /opt/homebrew /usr/local/Homebrew 2>/dev/null || true
-        fi
-        
-        # Determine correct installation path
-        if [[ "$(uname -m)" == "arm64" ]]; then
-            HOMEBREW_PREFIX="/opt/homebrew"
-        else
-            HOMEBREW_PREFIX="/usr/local"
-        fi
-        
-        # Create directory and clone
-        sudo mkdir -p "$HOMEBREW_PREFIX" 2>/dev/null || true
-        sudo chown -R "$(whoami):admin" "$HOMEBREW_PREFIX" 2>/dev/null || true
-        
-        if git clone https://github.com/Homebrew/brew "$HOMEBREW_PREFIX/Homebrew" 2>/dev/null; then
-            # Create symlinks
-            mkdir -p "$HOMEBREW_PREFIX/bin" 2>/dev/null || true
-            ln -sf "$HOMEBREW_PREFIX/Homebrew/bin/brew" "$HOMEBREW_PREFIX/bin/brew" 2>/dev/null || true
-            echo -e "${GREEN}✓ Manual installation successful${NC}"
-        else
-            echo -e "${RED}✗ Manual installation failed, trying curl fallback...${NC}"
-            
-            # Method 3: Direct curl with timeout and retries
-            for attempt in {1..3}; do
-                echo -e "${CYAN}  Curl attempt $attempt/3...${NC}"
-                if curl -fsSL --connect-timeout 30 --max-time 300 --retry 3 \
-                   https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | \
-                   /bin/bash -s -- --unattended </dev/null; then
-                    echo -e "${GREEN}✓ Curl installation successful${NC}"
-                    break
-                elif [[ $attempt -eq 3 ]]; then
-                    echo -e "${RED}✗ All Homebrew installation methods failed${NC}"
-                    echo -e "${YELLOW}  Please install Homebrew manually from https://brew.sh${NC}"
-                    return 1
-                fi
-                sleep 5
-            done
-        fi
-    fi
-    
-    # Ensure Homebrew is in PATH
-    if [[ -f "/opt/homebrew/bin/brew" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile 2>/dev/null || true
-    elif [[ -f "/usr/local/bin/brew" ]]; then
-        eval "$(/usr/local/bin/brew shellenv)"
-        echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile 2>/dev/null || true
-    fi
-    
-    # Verify installation
-    if command_exists brew; then
-        echo -e "${GREEN}✓ Homebrew successfully installed and configured${NC}"
-        brew --version
-        return 0
-    else
-        echo -e "${RED}✗ Homebrew installation verification failed${NC}"
-        return 1
-    fi
+brew_cask() {
+  if brew list --cask "$1" &>/dev/null 2>&1; then
+    ok "$1 already installed"
+  else
+    info "Installing $1..."
+    brew install --cask "$1" 2>&1 || warn "Failed: $1"
+  fi
 }
 
-# Install Homebrew
-if [[ " ${missing_items[*]} " =~ " Homebrew " ]]; then
-    install_homebrew || {
-        echo -e "${RED}⚠️  Homebrew installation failed. Skipping brew-dependent installations.${NC}"
-        exit 1
+pipx_pkg() {
+  if pipx list 2>/dev/null | grep -q "package $1"; then
+    ok "$1 already installed"
+  else
+    info "Installing $1 via pipx..."
+    pipx install "$1" 2>&1 || warn "Failed: $1"
+  fi
+}
+
+# ── Homebrew check ──────────────────────────────────────────────────────────
+if ! command -v brew &>/dev/null; then
+  echo ""
+  warn "Homebrew is not installed."
+  echo ""
+  echo "  Run this command first, then re-run this script:"
+  echo ""
+  echo -e "  ${CYAN}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
+  echo ""
+  exit 1
+fi
+
+# Detect Apple Silicon vs Intel
+ARCH=$(uname -m)
+if [[ "$ARCH" == "arm64" ]]; then
+  HOMEBREW_PREFIX="/opt/homebrew"
+else
+  HOMEBREW_PREFIX="/usr/local"
+fi
+ok "Homebrew found at $HOMEBREW_PREFIX"
+
+# ── Sudo primer ─────────────────────────────────────────────────────────────
+echo ""
+info "This script requires sudo for some steps. Enter your password once:"
+sudo -v
+# Keep sudo alive for the duration of the script
+while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+SUDO_PID=$!
+trap "kill $SUDO_PID 2>/dev/null; exit" INT TERM EXIT
+
+# ════════════════════════════════════════════════════════════════════════════
+section "1 · macOS System Preferences"
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Dock ─────────────────────────────────────────────────────────────────────
+info "Dock..."
+defaults write com.apple.dock tilesize -int 32
+defaults write com.apple.dock magnification -bool true
+defaults write com.apple.dock largesize -int 64
+defaults write com.apple.dock orientation -string "bottom"
+defaults write com.apple.dock show-recents -bool false
+ok "Dock: small icons, magnify on hover, bottom, no recent apps"
+
+# ── Mouse ─────────────────────────────────────────────────────────────────────
+info "Mouse..."
+defaults write -g com.apple.mouse.scaling -float 3.0
+defaults write com.apple.AppleMultitouchMouse MouseButtonMode -string "TwoButton"
+defaults write -g com.apple.swipescrolldirection -bool false
+ok "Mouse: max speed, right-click on, scroll non-reverse"
+
+# ── Keyboard ─────────────────────────────────────────────────────────────────
+info "Keyboard..."
+defaults write -g InitialKeyRepeat -int 15
+defaults write -g KeyRepeat -int 2
+ok "Keyboard: fast repeat, short delay"
+
+# ── Finder ───────────────────────────────────────────────────────────────────
+info "Finder..."
+defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+defaults write com.apple.finder AppleShowAllFiles -bool true
+defaults write NSGlobalDomain AppleShowAllExtensions -bool true
+defaults write com.apple.finder ShowPathbar -bool true
+defaults write com.apple.finder ShowStatusBar -bool true
+defaults write com.apple.finder _FXSortFoldersFirst -bool true
+ok "Finder: list view, hidden files, all extensions, path+status bar, folders first"
+
+# ── TextEdit ─────────────────────────────────────────────────────────────────
+info "TextEdit..."
+defaults write com.apple.TextEdit RichText -int 0
+ok "TextEdit: default to plain text (.txt)"
+
+# ── Screenshots ──────────────────────────────────────────────────────────────
+info "Screenshots..."
+mkdir -p "$HOME/Screenshots"
+defaults write com.apple.screencapture location -string "$HOME/Screenshots"
+defaults write com.apple.screencapture type -string "jpg"
+ok "Screenshots → ~/Screenshots (JPG)"
+
+# ── Menu Bar ─────────────────────────────────────────────────────────────────
+info "Menu Bar..."
+defaults write com.apple.menuextra.clock ShowDate -int 1
+defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM  HH:mm"
+ok "Menu bar clock: date + day"
+
+# ── Security ─────────────────────────────────────────────────────────────────
+info "Security..."
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on 2>/dev/null || true
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on 2>/dev/null || true
+defaults write com.apple.screensaver askForPassword -int 1
+defaults write com.apple.screensaver askForPasswordDelay -int 0
+ok "Firewall on, stealth mode on, password required immediately on wake"
+
+# ── Power ────────────────────────────────────────────────────────────────────
+info "Power..."
+sudo pmset -c sleep 0
+sudo pmset -c disksleep 0
+ok "Sleep disabled on AC power"
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+info "Misc system settings..."
+defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
+defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
+defaults write com.apple.CrashReporter DialogType -string "none"
+defaults write com.apple.LaunchServices LSQuarantine -bool false
+defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
+sudo systemsetup -setusingnetworktime on 2>/dev/null || true
+chflags nohidden "$HOME/Library"
+ok "Expanded save panel, no crash dialogs, no quarantine prompt, tap-to-click on login, auto timezone, ~/Library visible"
+
+# Restart UI services
+killall Dock 2>/dev/null || true
+killall Finder 2>/dev/null || true
+killall SystemUIServer 2>/dev/null || true
+
+# ════════════════════════════════════════════════════════════════════════════
+section "2 · Authorizations & Privacy"
+# ════════════════════════════════════════════════════════════════════════════
+
+# Xcode license
+info "Accepting Xcode license..."
+sudo xcodebuild -license accept 2>/dev/null || true
+ok "Xcode license accepted"
+
+# Allow apps from identified developers (Gatekeeper stays on)
+info "Gatekeeper..."
+sudo spctl --global-enable 2>/dev/null || true
+ok "Gatekeeper enabled (identified developers allowed)"
+
+# SSH key generation
+info "SSH key setup..."
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+
+if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+  ssh-keygen -t ed25519 -C "heyfinal" -f "$HOME/.ssh/id_ed25519" -N "" -q
+  ok "SSH key generated: ~/.ssh/id_ed25519"
+else
+  ok "SSH ed25519 key already exists"
+fi
+
+ssh-add --apple-use-keychain "$HOME/.ssh/id_ed25519" 2>/dev/null || true
+
+if ! grep -q "ServerAliveInterval" "$HOME/.ssh/config" 2>/dev/null; then
+  cat >> "$HOME/.ssh/config" << 'EOF'
+Host *
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+EOF
+  chmod 600 "$HOME/.ssh/config"
+  ok "SSH config written (~/.ssh/config)"
+else
+  ok "SSH config already configured"
+fi
+
+# Privacy permissions — must be done manually
+echo ""
+warn "Manual step required — iTerm2 privacy permissions:"
+echo "    Full Disk Access  →  System Settings → Privacy & Security → Full Disk Access"
+echo "    Accessibility     →  System Settings → Privacy & Security → Accessibility"
+echo "    Automation        →  System Settings → Privacy & Security → Automation"
+echo ""
+read -p "  Press Enter to open Accessibility settings now (or Ctrl+C to skip)..." _REPLY 2>/dev/null || true
+open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
+
+# ════════════════════════════════════════════════════════════════════════════
+section "3 · Homebrew Packages"
+# ════════════════════════════════════════════════════════════════════════════
+
+info "Updating Homebrew..."
+brew update 2>&1 | tail -1
+
+# ── CLI Essentials ────────────────────────────────────────────────────────────
+info "CLI essentials..."
+for pkg in git gh wget curl jq yq fzf ripgrep bat eza fd tree htop bottom tldr zoxide watch duf tmux rsync gnupg; do
+  brew_pkg "$pkg"
+done
+
+# ── Dev Runtimes ──────────────────────────────────────────────────────────────
+info "Dev runtimes..."
+brew_pkg python@3.12
+brew_pkg uv
+brew_pkg pipx
+brew_pkg go
+brew_pkg openjdk
+
+# Java JAVA_HOME symlink
+sudo ln -sfn "$HOMEBREW_PREFIX/opt/openjdk/libexec/openjdk.jdk" /Library/Java/JavaVirtualMachines/openjdk.jdk 2>/dev/null || true
+
+# Rust
+if ! command -v rustup &>/dev/null; then
+  info "Installing Rust via rustup..."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --quiet
+  ok "Rust installed"
+else
+  ok "Rust already installed"
+fi
+
+# NVM + Node LTS
+if [ ! -d "$HOME/.nvm" ]; then
+  info "Installing nvm..."
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh 2>/dev/null | bash 2>/dev/null
+fi
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
+nvm install --lts 2>/dev/null && nvm use --lts 2>/dev/null || true
+ok "Node LTS installed via nvm"
+
+# ── Network / Security ────────────────────────────────────────────────────────
+info "Network & security tools..."
+for pkg in nmap netcat mtr httpie iperf3 whois dnsmasq; do
+  brew_pkg "$pkg"
+done
+
+# tshark (Wireshark CLI) — installed via cask which includes both
+# ── Database / Queue ──────────────────────────────────────────────────────────
+info "Database tools..."
+brew_pkg redis
+brew_pkg sqlite
+
+# Auto-start redis on login
+brew services start redis 2>/dev/null || true
+ok "Redis service started"
+
+# ── Containers ────────────────────────────────────────────────────────────────
+info "Container tools..."
+brew_pkg docker
+brew_pkg docker-compose
+
+# ── Git Extras ────────────────────────────────────────────────────────────────
+info "Git extras..."
+brew_pkg git-lfs
+brew_pkg lazygit
+brew_pkg diff-so-fancy
+git lfs install --skip-repo 2>/dev/null || true
+
+# ── macOS Utilities ───────────────────────────────────────────────────────────
+info "macOS utilities..."
+brew_pkg mas
+brew_pkg dockutil
+brew_pkg switchaudio-osx
+brew_pkg blueutil
+
+# ════════════════════════════════════════════════════════════════════════════
+section "4 · Applications"
+# ════════════════════════════════════════════════════════════════════════════
+
+brew_cask iterm2
+brew_cask visual-studio-code
+brew_cask google-chrome
+brew_cask raycast
+brew_cask proxyman
+brew_cask wireshark
+brew_cask tableplus
+brew_cask insomnia
+brew_cask bruno
+brew_cask docker
+brew_cask balenaetcher
+brew_cask handbrake
+
+# Font for iTerm2 / powerlevel10k
+brew_cask font-meslo-lg-nerd-font
+
+# ════════════════════════════════════════════════════════════════════════════
+section "5 · Shell Configuration"
+# ════════════════════════════════════════════════════════════════════════════
+
+ZSHRC="$HOME/.zshrc"
+
+if ! grep -q "# ── heyfinal dotmalt ──" "$ZSHRC" 2>/dev/null; then
+  info "Writing ~/.zshrc config..."
+  cat >> "$ZSHRC" << ZSHRC_BLOCK
+
+# ── heyfinal dotmalt ────────────────────────────────────────────────────────
+
+# PATH
+export PATH="${HOMEBREW_PREFIX}/bin:/usr/local/bin:\$PATH"
+export PATH="\$HOME/.local/bin:\$PATH"
+export GOPATH="\$HOME/go"
+export PATH="\$GOPATH/bin:\$PATH"
+export PATH="\$HOME/.cargo/bin:\$PATH"
+export JAVA_HOME="${HOMEBREW_PREFIX}/opt/openjdk/libexec/openjdk.jdk/Contents/Home"
+export PATH="\$JAVA_HOME/bin:\$PATH"
+
+# nvm
+export NVM_DIR="\$HOME/.nvm"
+[ -s "\$NVM_DIR/nvm.sh" ] && \. "\$NVM_DIR/nvm.sh"
+[ -s "\$NVM_DIR/bash_completion" ] && \. "\$NVM_DIR/bash_completion"
+
+# zoxide (smart cd)
+eval "\$(zoxide init zsh)"
+
+# fzf
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# iTerm2 shell integration
+[ -f ~/.iterm2_shell_integration.zsh ] && source ~/.iterm2_shell_integration.zsh
+
+# API keys
+[ -f "\$HOME/.env_secrets" ] && source "\$HOME/.env_secrets"
+
+# Aliases
+alias ll='eza -la --git'
+alias cat='bat'
+alias grep='rg'
+alias top='btm'
+alias py='python3'
+alias venv='python3 -m venv venv && source venv/bin/activate'
+alias activate='source venv/bin/activate'
+alias ports='lsof -i -P -n | grep LISTEN'
+alias myip='curl -s ifconfig.me'
+alias flushdns='sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+ZSHRC_BLOCK
+  ok "~/.zshrc updated"
+else
+  ok "~/.zshrc already configured"
+fi
+
+# fzf shell integration
+"$HOMEBREW_PREFIX/opt/fzf/install" --all --no-bash --no-fish --no-update-rc 2>/dev/null || true
+
+# ════════════════════════════════════════════════════════════════════════════
+section "6 · Git Configuration"
+# ════════════════════════════════════════════════════════════════════════════
+
+git config --global user.name "heyfinal"
+git config --global init.defaultBranch main
+git config --global pull.rebase true
+git config --global core.editor nano
+git config --global core.pager "diff-so-fancy | less --tabs=4 -RFX"
+git config --global credential.helper osxkeychain
+git config --global alias.st status
+git config --global alias.co checkout
+git config --global alias.br branch
+git config --global alias.lg "log --oneline --graph --decorate --all"
+
+cat > "$HOME/.gitignore_global" << 'EOF'
+.DS_Store
+.env
+.env.*
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+*.log
+.idea/
+.vscode/
+*.swp
+EOF
+git config --global core.excludesfile "$HOME/.gitignore_global"
+ok "Git configured (heyfinal, main, nano, diff-so-fancy, aliases)"
+
+# ════════════════════════════════════════════════════════════════════════════
+section "7 · Python Environment"
+# ════════════════════════════════════════════════════════════════════════════
+
+pipx ensurepath 2>/dev/null || true
+
+for tool in black ruff mypy httpie yt-dlp rich-cli; do
+  pipx_pkg "$tool"
+done
+
+# ════════════════════════════════════════════════════════════════════════════
+section "8 · AI CLIs"
+# ════════════════════════════════════════════════════════════════════════════
+
+# Ensure npm is available
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
+
+if command -v npm &>/dev/null; then
+  info "Installing Claude Code..."
+  npm install -g @anthropic-ai/claude-code 2>/dev/null && ok "Claude Code installed" || warn "Claude Code install failed"
+
+  info "Installing OpenAI Codex..."
+  npm install -g @openai/codex 2>/dev/null && ok "Codex installed" || warn "Codex install failed"
+
+  info "Installing Gemini CLI..."
+  npm install -g @google/gemini-cli 2>/dev/null && ok "Gemini CLI installed" || warn "Gemini CLI install failed"
+else
+  warn "npm not available — skipping AI CLI installs. Run manually after restarting shell."
+fi
+
+# ════════════════════════════════════════════════════════════════════════════
+section "9 · Claude Code — MCP Servers"
+# ════════════════════════════════════════════════════════════════════════════
+
+mkdir -p "$HOME/databases"
+
+info "Writing MCP server config to ~/.claude.json..."
+
+# Load GH_TOKEN if available
+SECRETS_FILE="$HOME/.env_secrets"
+GH_TOKEN_VAL=""
+if [ -f "$SECRETS_FILE" ]; then
+  GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
+fi
+
+cat > "$HOME/.claude.json" << EOF
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "$HOME", "/tmp"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GH_TOKEN_VAL}"
+      }
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "$HOME"]
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@executeautomation/playwright-mcp-server"]
+    },
+    "sqlite": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "$HOME/databases/local.db"]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/dev"]
+    },
+    "redis": {
+      "command": "npx",
+      "args": ["-y", "mcp-server-redis"],
+      "env": {
+        "REDIS_URL": "redis://localhost:6379"
+      }
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"]
+    },
+    "duckduckgo": {
+      "command": "npx",
+      "args": ["-y", "duckduckgo-mcp-server"]
+    },
+    "youtube": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-youtube-transcript"]
+    },
+    "osquery": {
+      "command": "npx",
+      "args": ["-y", "osquery-mcp-server"]
     }
+  }
+}
+EOF
+ok "~/.claude.json written (13 MCP servers)"
+
+# ════════════════════════════════════════════════════════════════════════════
+section "10 · Claude Code — Settings & Config"
+# ════════════════════════════════════════════════════════════════════════════
+
+mkdir -p "$HOME/.claude/hooks"
+mkdir -p "$HOME/.claude/backups"
+
+# ── settings.json ────────────────────────────────────────────────────────────
+info "Writing ~/.claude/settings.json..."
+cat > "$HOME/.claude/settings.json" << 'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Task(*)",
+      "NotebookEdit(*)",
+      "mcp__filesystem__*",
+      "mcp__memory__*",
+      "mcp__github__*",
+      "mcp__git__*",
+      "mcp__puppeteer__*",
+      "mcp__playwright__*",
+      "mcp__sqlite__*",
+      "mcp__postgres__*",
+      "mcp__redis__*",
+      "mcp__sequential-thinking__*",
+      "mcp__fetch__*",
+      "mcp__duckduckgo__*",
+      "mcp__youtube__*",
+      "mcp__osquery__*"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/pre_backup.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Task complete\" with title \"Claude Code\" sound name \"Glass\"' 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+ok "~/.claude/settings.json written (all tools allowed, hooks enabled)"
+
+# ── Pre-backup hook ───────────────────────────────────────────────────────────
+info "Installing pre-backup hook..."
+cat > "$HOME/.claude/hooks/pre_backup.sh" << 'EOF'
+#!/bin/bash
+# Auto-backup files before Write/Edit operations
+FILE="${CLAUDE_TOOL_INPUT_FILE_PATH:-}"
+if [ -n "$FILE" ] && [ -f "$FILE" ]; then
+  BACKUP_DIR="$HOME/.claude/backups/$(date +%Y%m%d)"
+  mkdir -p "$BACKUP_DIR"
+  cp "$FILE" "$BACKUP_DIR/$(basename "$FILE").$(date +%H%M%S).bak" 2>/dev/null || true
+fi
+EOF
+chmod +x "$HOME/.claude/hooks/pre_backup.sh"
+ok "Pre-backup hook installed (~/.claude/hooks/pre_backup.sh)"
+
+# ── CLAUDE.md ─────────────────────────────────────────────────────────────────
+info "Writing ~/CLAUDE.md..."
+cat > "$HOME/CLAUDE.md" << 'EOF'
+# Claude Code — Global Configuration
+
+## User
+- Handle: heyfinal
+- GitHub: https://github.com/heyfinal
+
+## Hard Rules
+- NEVER auto-generate demo, placeholder, or mock code in any project
+- NEVER commit code unless explicitly asked
+- NEVER add boilerplate, stubs, or example data unless specifically instructed
+- Do not add docstrings, comments, or type annotations to code you didn't touch
+- Avoid over-engineering — minimum complexity for the task at hand
+- Do not create README or documentation files unless explicitly requested
+
+## Dev Environment
+- Python: 3.12
+- Formatter: black
+- Linter: ruff
+- Type checker: mypy
+- Package manager: uv (not pip directly)
+- Shell: zsh
+- Default editor: nano
+
+## AI Delegation Strategy
+You are the parent orchestrator. Delegate to reduce API usage. Audit all subagent output before accepting.
+
+**→ Codex** — fast code gen, refactors, boilerplate, syntax-heavy tasks
+```
+codex "<prompt>"
+```
+
+**→ Gemini** — long context, doc review, large file analysis, research
+```
+gemini "<prompt>"
+```
+
+**→ DeepSeek** — code-specific algorithms, implementation detail
+Use `mcp__deepseek` tools if available
+
+**Audit rule:** You are responsible for correctness, security, and style of all delegated output.
+
+## Stack Reference
+- AI APIs: Anthropic Claude, OpenAI GPT-4, Google Gemini, DeepSeek
+- MCP Servers: filesystem, memory, github, git, puppeteer, playwright, sqlite, postgres, redis, sequential-thinking, fetch, duckduckgo, youtube, osquery
+- Python stack: aiohttp, fastapi, playwright, openai, google-generativeai, pandas, sqlalchemy, click, rich, psutil, paramiko
+- Runtime: Docker, Redis (local), SQLite
+- Shell tools: eza, bat, ripgrep, fzf, zoxide, lazygit, tmux
+EOF
+ok "~/CLAUDE.md written"
+
+# ════════════════════════════════════════════════════════════════════════════
+section "11 · API Keys"
+# ════════════════════════════════════════════════════════════════════════════
+
+SECRETS_FILE="$HOME/.env_secrets"
+
+if [ ! -f "$SECRETS_FILE" ]; then
+  touch "$SECRETS_FILE"
+  chmod 600 "$SECRETS_FILE"
 fi
 
-# Install CLI tools via Homebrew
-if command_exists brew; then
-    cli_tools=()
-    [[ " ${missing_items[*]} " =~ " Git " ]] && cli_tools+=("git")
-    [[ " ${missing_items[*]} " =~ " Node.js " ]] && cli_tools+=("node")
-    [[ " ${missing_items[*]} " =~ " Python3 " ]] && cli_tools+=("python3")
-    [[ " ${missing_items[*]} " =~ " Docker " ]] && cli_tools+=("docker")
-    [[ " ${missing_items[*]} " =~ " OpenAI CLI " ]] && cli_tools+=("openai-cli")
-    [[ " ${missing_items[*]} " =~ " wget " ]] && cli_tools+=("wget")
-    [[ " ${missing_items[*]} " =~ " htop " ]] && cli_tools+=("htop")
-    [[ " ${missing_items[*]} " =~ " tree " ]] && cli_tools+=("tree")
-    [[ " ${missing_items[*]} " =~ " jq " ]] && cli_tools+=("jq")
-    [[ " ${missing_items[*]} " =~ " fzf " ]] && cli_tools+=("fzf")
-    [[ " ${missing_items[*]} " =~ " ripgrep (rg) " ]] && cli_tools+=("ripgrep")
-    [[ " ${missing_items[*]} " =~ " bat " ]] && cli_tools+=("bat")
-    
-    if [[ ${#cli_tools[@]} -gt 0 ]]; then
-        echo -e "${YELLOW}🔧 Installing CLI tools: ${cli_tools[*]}${NC}"
-        brew install "${cli_tools[@]}"
-    fi
-    
-    # Install GUI applications via Homebrew Cask
-    cask_apps=()
-    [[ " ${missing_items[*]} " =~ " iTerm2 " ]] && cask_apps+=("iterm2")
-    [[ " ${missing_items[*]} " =~ " VLC " ]] && cask_apps+=("vlc")
-    [[ " ${missing_items[*]} " =~ " The Unarchiver " ]] && cask_apps+=("the-unarchiver")
-    
-    if [[ ${#cask_apps[@]} -gt 0 ]]; then
-        echo -e "${YELLOW}💻 Installing GUI applications: ${cask_apps[*]}${NC}"
-        brew install --cask "${cask_apps[@]}"
-    fi
-    
-    # Set up OpenAI CLI global command if it was installed
-    if [[ " ${missing_items[*]} " =~ " OpenAI CLI " ]] && command_exists openai; then
-        echo -e "${YELLOW}🔧 Setting up OpenAI CLI global command...${NC}"
-        # Create symlink for global 'openai' command (similar to claude-code)
-        if [[ ! -L /usr/local/bin/openai ]]; then
-            sudo ln -sf "$(which openai)" /usr/local/bin/openai 2>/dev/null || true
-        fi
-        echo -e "${GREEN}✓ OpenAI CLI available globally as 'openai'${NC}"
-    fi
+prompt_key() {
+  local key_name="$1"
+  local current_val
+  current_val=$(grep "^export ${key_name}=" "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
+  if [ -n "$current_val" ]; then
+    ok "$key_name already set"
+    return
+  fi
+  echo -n "  ${CYAN}→${NC}  $key_name: "
+  read -r input_val 2>/dev/null || input_val=""
+  if [ -n "$input_val" ]; then
+    echo "export ${key_name}=\"${input_val}\"" >> "$SECRETS_FILE"
+    ok "$key_name saved"
+  else
+    warn "$key_name skipped — add manually to ~/.env_secrets"
+  fi
+}
+
+echo ""
+info "Enter API keys (press Enter to skip any):"
+echo ""
+prompt_key ANTHROPIC_API_KEY
+prompt_key OPENAI_API_KEY
+prompt_key DEEPSEEK_API_KEY
+prompt_key GEMINI_API_KEY
+prompt_key GH_TOKEN
+
+chmod 600 "$SECRETS_FILE"
+ok "~/.env_secrets saved (chmod 600)"
+
+# Inject GH_TOKEN into MCP config
+GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
+if [ -n "$GH_TOKEN_VAL" ] && [ -f "$HOME/.claude.json" ]; then
+  # Only replace if still empty placeholder
+  sed -i '' "s/\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"\"/\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"${GH_TOKEN_VAL}\"/" "$HOME/.claude.json" 2>/dev/null || true
 fi
 
-# Restart Finder to apply changes
-killall Finder || true
+# ════════════════════════════════════════════════════════════════════════════
+section "12 · iTerm2 Enhancements"
+# ════════════════════════════════════════════════════════════════════════════
 
-echo -e "\n${GREEN}🎉 macOS setup completed! All missing items have been installed.${NC}"
+# Shell integration
+if [ ! -f "$HOME/.iterm2_shell_integration.zsh" ]; then
+  info "Installing iTerm2 shell integration..."
+  curl -sL https://iterm2.com/shell_integration/zsh -o "$HOME/.iterm2_shell_integration.zsh" 2>/dev/null || true
+  ok "iTerm2 shell integration installed"
+else
+  ok "iTerm2 shell integration already installed"
+fi
+
+# Catppuccin Mocha color scheme
+info "Downloading Catppuccin Mocha iTerm2 theme..."
+THEME_PATH="$HOME/Downloads/Catppuccin-Mocha.itermcolors"
+curl -sL "https://raw.githubusercontent.com/catppuccin/iterm/main/colors/Catppuccin-Mocha.itermcolors" \
+  -o "$THEME_PATH" 2>/dev/null || true
+if [ -f "$THEME_PATH" ]; then
+  open "$THEME_PATH" 2>/dev/null || true
+  ok "Catppuccin Mocha opened — click OK in iTerm2 to import"
+fi
+
+# tmux config
+if [ ! -f "$HOME/.tmux.conf" ]; then
+  info "Writing ~/.tmux.conf..."
+  cat > "$HOME/.tmux.conf" << 'EOF'
+# iTerm2 native tmux mode: launch with  tmux -CC new-session
+set -g default-terminal "xterm-256color"
+set -ga terminal-overrides ",xterm-256color:Tc"
+set -g mouse on
+set -g history-limit 50000
+set -g base-index 1
+set -g pane-base-index 1
+set -g status-bg black
+set -g status-fg white
+set -g status-left "#[fg=cyan] #S "
+set -g status-right "#[fg=yellow]%H:%M %d-%b "
+EOF
+  ok "~/.tmux.conf written (mouse on, 256color, status bar)"
+else
+  ok "~/.tmux.conf already exists"
+fi
+
+# iTerm2 status bar (set via defaults — requires iTerm2 restart to take effect)
+info "Configuring iTerm2 status bar..."
+defaults write com.googlecode.iterm2 ShowStatusBar -bool true 2>/dev/null || true
+ok "iTerm2 status bar enabled (restart iTerm2 to see it)"
+
+# ════════════════════════════════════════════════════════════════════════════
+# Done
+# ════════════════════════════════════════════════════════════════════════════
+
+echo ""
+echo -e "${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Setup complete.${NC}"
+echo ""
+echo "  Manual steps remaining:"
+echo "  1. Restart iTerm2 → Preferences → Profile → Text → Font → MesloLGS NF"
+echo "  2. Grant Full Disk Access + Accessibility to iTerm2 in System Settings"
+echo "  3. Run: source ~/.zshrc"
+echo "  4. Start tmux with native iTerm2 mode: tmux -CC new-session"
+echo ""
+echo "  Your SSH public key (add to GitHub → Settings → SSH Keys):"
+echo ""
+cat "$HOME/.ssh/id_ed25519.pub" 2>/dev/null || warn "No SSH key found"
+echo ""
+echo -e "  Full log: ${CYAN}/tmp/mac_setup.log${NC}"
+echo -e "${TAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# Release sudo
+kill $SUDO_PID 2>/dev/null || true
+trap - INT TERM EXIT
