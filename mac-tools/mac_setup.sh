@@ -227,15 +227,6 @@ else
   ok "SSH config already configured"
 fi
 
-# Privacy permissions — must be done manually
-echo ""
-warn "Manual step required — iTerm2 privacy permissions:"
-echo "    Full Disk Access  →  System Settings → Privacy & Security → Full Disk Access"
-echo "    Accessibility     →  System Settings → Privacy & Security → Accessibility"
-echo "    Automation        →  System Settings → Privacy & Security → Automation"
-echo ""
-read -p "  Press Enter to open Accessibility settings now (or Ctrl+C to skip)..." _REPLY 2>/dev/null || true
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" 2>/dev/null || true
 
 # ════════════════════════════════════════════════════════════════════════════
 section "3 · Homebrew Packages"
