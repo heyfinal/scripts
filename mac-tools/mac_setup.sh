@@ -7,6 +7,19 @@
 LOG_FILE="/tmp/mac_setup.log"
 > "$LOG_FILE"
 
+# ── Detect real user (safe to run as root or normal user) ────────────────────
+if [ "$EUID" -eq 0 ]; then
+  REAL_USER=$(stat -f '%Su' /dev/console 2>/dev/null || who | awk '/console/{print $1}' | head -1)
+  [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ] && REAL_USER=$(ls /Users | grep -v Shared | grep -v '.localized' | head -1)
+  REAL_HOME="/Users/$REAL_USER"
+  AS_USER="sudo -H -u $REAL_USER HOME=$REAL_HOME"
+else
+  REAL_USER=$(whoami)
+  REAL_HOME="$HOME"
+  AS_USER=""
+fi
+export HOME="$REAL_HOME"
+
 # ── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -121,10 +134,10 @@ install_brew_batch() {
   for pkg in "${pkgs[@]}"; do
     ((i++))
     item_progress "$pkg" "$i" "$total"
-    if brew list "$pkg" &>/dev/null 2>&1; then
+    if $AS_USER brew list "$pkg" &>/dev/null 2>&1; then
       log "skip (installed): $pkg"
     else
-      brew install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+      $AS_USER brew install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
     fi
   done
   printf "\r  ${GREEN}✓${NC}  %-65s\n" "$section_label ($total packages)"
@@ -138,10 +151,10 @@ install_cask_batch() {
   for pkg in "${pkgs[@]}"; do
     ((i++))
     item_progress "$pkg" "$i" "$total"
-    if brew list --cask "$pkg" &>/dev/null 2>&1; then
+    if $AS_USER brew list --cask "$pkg" &>/dev/null 2>&1; then
       log "skip (installed): $pkg"
     else
-      brew install --cask "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+      $AS_USER brew install --cask "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
     fi
   done
   printf "\r  ${GREEN}✓${NC}  %-65s\n" "$section_label ($total apps)"
@@ -154,10 +167,10 @@ install_pipx_batch() {
   for pkg in "${pkgs[@]}"; do
     ((i++))
     item_progress "$pkg" "$i" "$total"
-    if pipx list 2>/dev/null | grep -q "package $pkg"; then
+    if $AS_USER pipx list 2>/dev/null | grep -q "package $pkg"; then
       log "skip (installed): $pkg"
     else
-      pipx install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+      $AS_USER pipx install "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
     fi
   done
   printf "\r  ${GREEN}✓${NC}  %-65s\n" "Python tools ($total packages)"
@@ -170,7 +183,11 @@ install_npm_batch() {
   for pkg in "${pkgs[@]}"; do
     ((i++))
     item_progress "$pkg" "$i" "$total"
-    npm install -g "$pkg" >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
+    $AS_USER bash -c "
+      export NVM_DIR=\"$REAL_HOME/.nvm\"
+      [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+      npm install -g \"$pkg\"
+    " >> "$LOG_FILE" 2>&1 || log "WARN: failed $pkg"
   done
   printf "\r  ${GREEN}✓${NC}  %-65s\n" "npm globals ($total packages)"
 }
@@ -315,22 +332,24 @@ install_brew_batch "Dev runtimes" \
   python@3.12 uv pipx go openjdk
 
 # Rust
-if ! command -v rustup &>/dev/null; then
+if ! $AS_USER bash -c 'command -v rustup' &>/dev/null; then
   item_progress "rust (rustup)" 1 1
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --quiet >> "$LOG_FILE" 2>&1
+  $AS_USER bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --quiet' >> "$LOG_FILE" 2>&1
   printf "\r  ${GREEN}✓${NC}  %-65s\n" "Rust installed via rustup"
 else
   ok "Rust already installed"
 fi
 
 # NVM + Node
-if [ ! -d "$HOME/.nvm" ]; then
+if [ ! -d "$REAL_HOME/.nvm" ]; then
   item_progress "nvm + node LTS" 1 1
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh 2>/dev/null | bash >> "$LOG_FILE" 2>&1
+  $AS_USER bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash' >> "$LOG_FILE" 2>&1
 fi
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
-nvm install --lts >> "$LOG_FILE" 2>&1 && nvm use --lts >> "$LOG_FILE" 2>&1 || true
+$AS_USER bash -c "
+  export NVM_DIR=\"$REAL_HOME/.nvm\"
+  [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+  nvm install --lts && nvm use --lts
+" >> "$LOG_FILE" 2>&1 || true
 printf "\r  ${GREEN}✓${NC}  %-65s\n" "Node LTS installed via nvm"
 
 install_brew_batch "Network & security" \
@@ -466,10 +485,7 @@ install_pipx_batch black ruff mypy httpie yt-dlp rich-cli
 update_section "AI CLIs"
 # ════════════════════════════════════════════════════════════════════════════
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" 2>/dev/null || true
-
-if command -v npm &>/dev/null; then
+if $AS_USER bash -c "export NVM_DIR=\"$REAL_HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; command -v npm" &>/dev/null; then
   install_npm_batch \
     @anthropic-ai/claude-code \
     @openai/codex \
@@ -730,7 +746,8 @@ prompt_key GEMINI_API_KEY
 prompt_key GH_TOKEN
 
 chmod 600 "$SECRETS_FILE"
-ok "~/.env_secrets saved (chmod 600)"
+chown "$REAL_USER" "$SECRETS_FILE" 2>/dev/null || true
+ok "~/.env_secrets saved (chmod 600, owned by $REAL_USER)"
 
 # Inject GH_TOKEN into MCP config
 GH_TOKEN_VAL=$(grep 'export GH_TOKEN=' "$SECRETS_FILE" 2>/dev/null | cut -d'"' -f2 || echo "")
