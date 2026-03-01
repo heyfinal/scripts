@@ -479,7 +479,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 phase_banner "Installing build prerequisites"
 
 apt update
-apt install -y \
+apt install -y --fix-missing \
     git \
     live-build \
     simple-cdd \
@@ -494,7 +494,7 @@ if ! dpkg -l kali-archive-keyring &>/dev/null; then
     # Add Kali repository
     echo "deb http://http.kali.org/kali kali-rolling main contrib non-free" | tee /etc/apt/sources.list.d/kali.list
     apt update
-    apt install -y kali-archive-keyring
+    apt install -y kali-archive-keyring --fix-missing
 fi
 
 # Ensure debootstrap knows about Kali mirrors if running on non-Kali Debian
